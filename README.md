@@ -1,4 +1,4 @@
-# PySpice-rs
+# PySpice
 
 Rust-powered Python library for SPICE circuit simulation. Drop-in circuit description API with a backend-neutral IR, multi-backend support, and exports for Rust, Python (PyO3), and C (FFI).
 
@@ -72,7 +72,7 @@ See the [`examples/`](examples/) directory for 18 working examples covering volt
 | ngspice | Supported | Default backend, XSPICE extensions |
 | Xyce | Supported | Sandia parallel simulator |
 | LTspice | Supported | Windows/macOS/Wine |
-| Spectre | Supported | Cadence, native Spectre syntax codegen |
+| Spectre | Supported (needs testing if anyone can) | Cadence, native Spectre syntax codegen |
 | VacaSk | Supported | Compact model testing via OpenVAF |
 
 See [`docs/backends/`](docs/backends/) for per-backend details and the [analysis compatibility map](docs/backends/analysis-map.md).
