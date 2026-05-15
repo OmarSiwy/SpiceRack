@@ -27,6 +27,5 @@ build/
 .pytest_cache/
 .tox/
 
-# Output from tests
-schema/
+# Nix build output
 target_nix/

@@ -8,8 +8,8 @@ name = "pyspice"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.24", features = ["extension-module"] }
-numpy = "0.24"
+pyo3 = { version = "0.24", features = ["extension-module"], optional = true }
+numpy = { version = "0.24", optional = true }
 num-complex = "0.4"
 thiserror = "2"
 tempfile = "3"
@@ -22,5 +22,5 @@ pretty_assertions = "1"
 
 [features]
 default = ["python"]
-python = []
+python = ["dep:pyo3", "dep:numpy"]
 cabi = []

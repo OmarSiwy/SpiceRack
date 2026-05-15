@@ -1,0 +1,60 @@
+{
+  "top": {
+    "name": "Voltage Divider",
+    "ports": [],
+    "parameters": [],
+    "components": [
+      {
+        "type": "VoltageSource",
+        "name": "in",
+        "np": "input",
+        "nm": "0",
+        "value": { "type": "Numeric", "value": 10.0 },
+        "waveform": null
+      },
+      {
+        "type": "Resistor",
+        "name": "1",
+        "n1": "input",
+        "n2": "output",
+        "value": { "type": "Numeric", "value": 10000.0 },
+        "params": []
+      },
+      {
+        "type": "Resistor",
+        "name": "2",
+        "n1": "output",
+        "n2": "0",
+        "value": { "type": "Numeric", "value": 10000.0 },
+        "params": []
+      }
+    ],
+    "instances": [],
+    "models": [],
+    "raw_spice": [],
+    "includes": [],
+    "libs": [],
+    "osdi_loads": []
+  },
+  "testbench": {
+    "dut": "Voltage Divider",
+    "stimulus": [],
+    "analyses": [
+      { "type": "Op" }
+    ],
+    "options": {
+      "portable": [],
+      "backend_specific": {}
+    },
+    "saves": [],
+    "measures": [],
+    "temperature": null,
+    "nominal_temperature": null,
+    "initial_conditions": [],
+    "node_sets": [],
+    "step_params": [],
+    "extra_lines": []
+  },
+  "subcircuit_defs": [],
+  "model_libraries": []
+}

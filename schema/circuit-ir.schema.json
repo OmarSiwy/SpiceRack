@@ -1,0 +1,1127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemify.dev/schemas/circuit-ir.schema.json",
+  "title": "PySpice-rs Circuit IR",
+  "description": "Backend-neutral intermediate representation for SPICE circuits. This is the contract between Schemify's Zig editor and the PySpice-rs simulation backend.",
+  "type": "object",
+  "required": ["top", "subcircuit_defs", "model_libraries"],
+  "properties": {
+    "top": { "$ref": "#/$defs/Subcircuit" },
+    "testbench": {
+      "oneOf": [
+        { "$ref": "#/$defs/Testbench" },
+        { "type": "null" }
+      ]
+    },
+    "subcircuit_defs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Subcircuit" }
+    },
+    "model_libraries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ModelLibrary" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Subcircuit": {
+      "type": "object",
+      "description": "Named, parameterized, composable circuit fragment -- the unit of reuse.",
+      "required": ["name", "ports", "parameters", "components", "instances", "models", "raw_spice", "includes", "libs", "osdi_loads"],
+      "properties": {
+        "name": { "type": "string" },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Port" }
+        },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ParamDef" }
+        },
+        "components": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Component" }
+        },
+        "instances": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Instance" }
+        },
+        "models": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelDef" }
+        },
+        "raw_spice": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "includes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "libs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/StringPair" }
+        },
+        "osdi_loads": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "Port": {
+      "type": "object",
+      "required": ["name", "direction"],
+      "properties": {
+        "name": { "type": "string" },
+        "direction": { "$ref": "#/$defs/PortDirection" }
+      },
+      "additionalProperties": false
+    },
+
+    "PortDirection": {
+      "type": "string",
+      "enum": ["InOut", "Input", "Output"]
+    },
+
+    "ParamDef": {
+      "type": "object",
+      "description": "Parameter definition with optional default value.",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "default": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "Instance": {
+      "type": "object",
+      "description": "Reference to a Subcircuit definition with port mapping and parameter overrides.",
+      "required": ["name", "subcircuit", "port_mapping", "parameters"],
+      "properties": {
+        "name": { "type": "string" },
+        "subcircuit": { "type": "string" },
+        "port_mapping": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/StringPair" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "ModelDef": {
+      "type": "object",
+      "description": "SPICE .model definition.",
+      "required": ["name", "kind", "parameters"],
+      "properties": {
+        "name": { "type": "string" },
+        "kind": { "type": "string", "description": "Model type, e.g. NMOS, PMOS, NPN, D" },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/StringPair" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "Component": {
+      "description": "All SPICE component types as structured data. Discriminated by the 'type' field.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "name", "n1", "n2", "value", "params"],
+          "properties": {
+            "type": { "const": "Resistor" },
+            "name": { "type": "string" },
+            "n1": { "type": "string" },
+            "n2": { "type": "string" },
+            "value": { "$ref": "#/$defs/IrValue" },
+            "params": { "type": "array", "items": { "$ref": "#/$defs/StringPair" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "n1", "n2", "value", "params"],
+          "properties": {
+            "type": { "const": "Capacitor" },
+            "name": { "type": "string" },
+            "n1": { "type": "string" },
+            "n2": { "type": "string" },
+            "value": { "$ref": "#/$defs/IrValue" },
+            "params": { "type": "array", "items": { "$ref": "#/$defs/StringPair" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "n1", "n2", "value", "params"],
+          "properties": {
+            "type": { "const": "Inductor" },
+            "name": { "type": "string" },
+            "n1": { "type": "string" },
+            "n2": { "type": "string" },
+            "value": { "$ref": "#/$defs/IrValue" },
+            "params": { "type": "array", "items": { "$ref": "#/$defs/StringPair" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "inductor1", "inductor2", "coupling"],
+          "properties": {
+            "type": { "const": "MutualInductor" },
+            "name": { "type": "string" },
+            "inductor1": { "type": "string" },
+            "inductor2": { "type": "string" },
+            "coupling": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "value"],
+          "properties": {
+            "type": { "const": "VoltageSource" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "value": { "$ref": "#/$defs/IrValue" },
+            "waveform": {
+              "oneOf": [
+                { "$ref": "#/$defs/IrWaveform" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "value"],
+          "properties": {
+            "type": { "const": "CurrentSource" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "value": { "$ref": "#/$defs/IrValue" },
+            "waveform": {
+              "oneOf": [
+                { "$ref": "#/$defs/IrWaveform" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "expression"],
+          "properties": {
+            "type": { "const": "BehavioralVoltage" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "expression": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "expression"],
+          "properties": {
+            "type": { "const": "BehavioralCurrent" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "expression": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "ncp", "ncm", "gain"],
+          "properties": {
+            "type": { "const": "Vcvs" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "ncp": { "type": "string" },
+            "ncm": { "type": "string" },
+            "gain": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "ncp", "ncm", "transconductance"],
+          "properties": {
+            "type": { "const": "Vccs" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "ncp": { "type": "string" },
+            "ncm": { "type": "string" },
+            "transconductance": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "vsense", "gain"],
+          "properties": {
+            "type": { "const": "Cccs" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "vsense": { "type": "string" },
+            "gain": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "vsense", "transresistance"],
+          "properties": {
+            "type": { "const": "Ccvs" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "vsense": { "type": "string" },
+            "transresistance": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "model", "params"],
+          "properties": {
+            "type": { "const": "Diode" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "model": { "type": "string" },
+            "params": { "type": "array", "items": { "$ref": "#/$defs/StringPair" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "nc", "nb", "ne", "model", "params"],
+          "properties": {
+            "type": { "const": "Bjt" },
+            "name": { "type": "string" },
+            "nc": { "type": "string" },
+            "nb": { "type": "string" },
+            "ne": { "type": "string" },
+            "model": { "type": "string" },
+            "params": { "type": "array", "items": { "$ref": "#/$defs/StringPair" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "nd", "ng", "ns", "nb", "model", "params"],
+          "properties": {
+            "type": { "const": "Mosfet" },
+            "name": { "type": "string" },
+            "nd": { "type": "string" },
+            "ng": { "type": "string" },
+            "ns": { "type": "string" },
+            "nb": { "type": "string" },
+            "model": { "type": "string" },
+            "params": { "type": "array", "items": { "$ref": "#/$defs/StringPair" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "nd", "ng", "ns", "model", "params"],
+          "properties": {
+            "type": { "const": "Jfet" },
+            "name": { "type": "string" },
+            "nd": { "type": "string" },
+            "ng": { "type": "string" },
+            "ns": { "type": "string" },
+            "model": { "type": "string" },
+            "params": { "type": "array", "items": { "$ref": "#/$defs/StringPair" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "nd", "ng", "ns", "model", "params"],
+          "properties": {
+            "type": { "const": "Mesfet" },
+            "name": { "type": "string" },
+            "nd": { "type": "string" },
+            "ng": { "type": "string" },
+            "ns": { "type": "string" },
+            "model": { "type": "string" },
+            "params": { "type": "array", "items": { "$ref": "#/$defs/StringPair" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "ncp", "ncm", "model"],
+          "properties": {
+            "type": { "const": "VSwitch" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "ncp": { "type": "string" },
+            "ncm": { "type": "string" },
+            "model": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "np", "nm", "vcontrol", "model"],
+          "properties": {
+            "type": { "const": "ISwitch" },
+            "name": { "type": "string" },
+            "np": { "type": "string" },
+            "nm": { "type": "string" },
+            "vcontrol": { "type": "string" },
+            "model": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "inp", "inm", "outp", "outm", "z0", "td"],
+          "properties": {
+            "type": { "const": "TLine" },
+            "name": { "type": "string" },
+            "inp": { "type": "string" },
+            "inm": { "type": "string" },
+            "outp": { "type": "string" },
+            "outm": { "type": "string" },
+            "z0": { "type": "number" },
+            "td": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "connections", "model"],
+          "properties": {
+            "type": { "const": "Xspice" },
+            "name": { "type": "string" },
+            "connections": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "model": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "line"],
+          "properties": {
+            "type": { "const": "RawSpice" },
+            "line": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "IrValue": {
+      "description": "Component value -- numeric, expression, or raw text.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "Numeric" },
+            "value": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "expr"],
+          "properties": {
+            "type": { "const": "Expression" },
+            "expr": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "text"],
+          "properties": {
+            "type": { "const": "Raw" },
+            "text": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "IrWaveform": {
+      "description": "Waveform specification for voltage/current sources.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "offset", "amplitude", "frequency", "delay", "damping", "phase"],
+          "properties": {
+            "type": { "const": "Sin" },
+            "offset": { "type": "number" },
+            "amplitude": { "type": "number" },
+            "frequency": { "type": "number" },
+            "delay": { "type": "number" },
+            "damping": { "type": "number" },
+            "phase": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "initial", "pulsed", "delay", "rise_time", "fall_time", "pulse_width", "period"],
+          "properties": {
+            "type": { "const": "Pulse" },
+            "initial": { "type": "number" },
+            "pulsed": { "type": "number" },
+            "delay": { "type": "number" },
+            "rise_time": { "type": "number" },
+            "fall_time": { "type": "number" },
+            "pulse_width": { "type": "number" },
+            "period": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "values"],
+          "properties": {
+            "type": { "const": "Pwl" },
+            "values": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/NumberPair" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "initial", "pulsed", "rise_delay", "rise_tau", "fall_delay", "fall_tau"],
+          "properties": {
+            "type": { "const": "Exp" },
+            "initial": { "type": "number" },
+            "pulsed": { "type": "number" },
+            "rise_delay": { "type": "number" },
+            "rise_tau": { "type": "number" },
+            "fall_delay": { "type": "number" },
+            "fall_tau": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "offset", "amplitude", "carrier_freq", "modulation_index", "signal_freq"],
+          "properties": {
+            "type": { "const": "Sffm" },
+            "offset": { "type": "number" },
+            "amplitude": { "type": "number" },
+            "carrier_freq": { "type": "number" },
+            "modulation_index": { "type": "number" },
+            "signal_freq": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "amplitude", "offset", "modulating_freq", "carrier_freq", "delay"],
+          "properties": {
+            "type": { "const": "Am" },
+            "amplitude": { "type": "number" },
+            "offset": { "type": "number" },
+            "modulating_freq": { "type": "number" },
+            "carrier_freq": { "type": "number" },
+            "delay": { "type": "number" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "Testbench": {
+      "type": "object",
+      "description": "Wraps a DUT with stimulus, analyses, and simulation options.",
+      "required": ["dut", "stimulus", "analyses", "options", "saves", "measures", "initial_conditions", "node_sets", "step_params", "extra_lines"],
+      "properties": {
+        "dut": { "type": "string" },
+        "stimulus": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Component" }
+        },
+        "analyses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Analysis" }
+        },
+        "options": { "$ref": "#/$defs/SimOptions" },
+        "saves": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "measures": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "temperature": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "null" }
+          ]
+        },
+        "nominal_temperature": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "null" }
+          ]
+        },
+        "initial_conditions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/StringNumberPair" }
+        },
+        "node_sets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/StringNumberPair" }
+        },
+        "step_params": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/StepParam" }
+        },
+        "extra_lines": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "StepParam": {
+      "type": "object",
+      "required": ["param", "start", "stop", "step"],
+      "properties": {
+        "param": { "type": "string" },
+        "start": { "type": "number" },
+        "stop": { "type": "number" },
+        "step": { "type": "number" },
+        "sweep_type": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "Analysis": {
+      "description": "All supported analyses as a tagged union, discriminated by the 'type' field.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "Op" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "sweeps"],
+          "properties": {
+            "type": { "const": "Dc" },
+            "sweeps": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/DcSweep" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "variation", "points", "start", "stop"],
+          "properties": {
+            "type": { "const": "Ac" },
+            "variation": { "type": "string", "description": "Sweep type: dec, oct, or lin" },
+            "points": { "type": "integer", "minimum": 0 },
+            "start": { "type": "number" },
+            "stop": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "step", "stop", "uic"],
+          "properties": {
+            "type": { "const": "Transient" },
+            "step": { "type": "number" },
+            "stop": { "type": "number" },
+            "start": {
+              "oneOf": [
+                { "type": "number" },
+                { "type": "null" }
+              ]
+            },
+            "max_step": {
+              "oneOf": [
+                { "type": "number" },
+                { "type": "null" }
+              ]
+            },
+            "uic": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "output", "reference", "source", "variation", "points", "start", "stop"],
+          "properties": {
+            "type": { "const": "Noise" },
+            "output": { "type": "string" },
+            "reference": { "type": "string" },
+            "source": { "type": "string" },
+            "variation": { "type": "string" },
+            "points": { "type": "integer", "minimum": 0 },
+            "start": { "type": "number" },
+            "stop": { "type": "number" },
+            "points_per_summary": {
+              "oneOf": [
+                { "type": "integer", "minimum": 0 },
+                { "type": "null" }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "output", "source"],
+          "properties": {
+            "type": { "const": "Tf" },
+            "output": { "type": "string" },
+            "source": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "output"],
+          "properties": {
+            "type": { "const": "Sensitivity" },
+            "output": { "type": "string" },
+            "ac": {
+              "oneOf": [
+                { "$ref": "#/$defs/AcSweepParams" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "node1", "node2", "node3", "node4", "tf_type", "pz_type"],
+          "properties": {
+            "type": { "const": "PoleZero" },
+            "node1": { "type": "string" },
+            "node2": { "type": "string" },
+            "node3": { "type": "string" },
+            "node4": { "type": "string" },
+            "tf_type": { "type": "string" },
+            "pz_type": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "variation", "points", "start", "stop"],
+          "properties": {
+            "type": { "const": "Distortion" },
+            "variation": { "type": "string" },
+            "points": { "type": "integer", "minimum": 0 },
+            "start": { "type": "number" },
+            "stop": { "type": "number" },
+            "f2overf1": {
+              "oneOf": [
+                { "type": "number" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "fundamental", "stabilization", "observe_node", "points_per_period", "harmonics"],
+          "properties": {
+            "type": { "const": "Pss" },
+            "fundamental": { "type": "number" },
+            "stabilization": { "type": "number" },
+            "observe_node": { "type": "string" },
+            "points_per_period": { "type": "integer", "minimum": 0 },
+            "harmonics": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "frequencies", "harmonics"],
+          "properties": {
+            "type": { "const": "HarmonicBalance" },
+            "frequencies": {
+              "type": "array",
+              "items": { "type": "number" }
+            },
+            "harmonics": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "variation", "points", "start", "stop"],
+          "properties": {
+            "type": { "const": "SPar" },
+            "variation": { "type": "string" },
+            "points": { "type": "integer", "minimum": 0 },
+            "start": { "type": "number" },
+            "stop": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "probe", "variation", "points", "start", "stop"],
+          "properties": {
+            "type": { "const": "Stability" },
+            "probe": { "type": "string" },
+            "variation": { "type": "string" },
+            "points": { "type": "integer", "minimum": 0 },
+            "start": { "type": "number" },
+            "stop": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "step", "stop"],
+          "properties": {
+            "type": { "const": "TransientNoise" },
+            "step": { "type": "number" },
+            "stop": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "fundamental", "outputs"],
+          "properties": {
+            "type": { "const": "Fourier" },
+            "fundamental": { "type": "number" },
+            "outputs": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "num_harmonics": {
+              "oneOf": [
+                { "type": "integer", "minimum": 0 },
+                { "type": "null" }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "num_samples", "distributions"],
+          "properties": {
+            "type": { "const": "XyceSampling" },
+            "num_samples": { "type": "integer", "minimum": 0 },
+            "distributions": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/StringPair" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "num_samples", "distributions"],
+          "properties": {
+            "type": { "const": "XyceEmbeddedSampling" },
+            "num_samples": { "type": "integer", "minimum": 0 },
+            "distributions": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/StringPair" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "num_samples", "distributions", "order"],
+          "properties": {
+            "type": { "const": "XycePce" },
+            "num_samples": { "type": "integer", "minimum": 0 },
+            "distributions": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/StringPair" }
+            },
+            "order": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "signal", "np", "start", "stop", "window", "format"],
+          "properties": {
+            "type": { "const": "XyceFft" },
+            "signal": { "type": "string" },
+            "np": { "type": "integer", "minimum": 0 },
+            "start": { "type": "number" },
+            "stop": { "type": "number" },
+            "window": { "type": "string" },
+            "format": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "param", "start", "stop", "step", "inner", "inner_type"],
+          "properties": {
+            "type": { "const": "SpectreSweep" },
+            "param": { "type": "string" },
+            "start": { "type": "number" },
+            "stop": { "type": "number" },
+            "step": { "type": "number" },
+            "inner": { "type": "string" },
+            "inner_type": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "iterations", "inner", "inner_type"],
+          "properties": {
+            "type": { "const": "SpectreMonteCarlo" },
+            "iterations": { "type": "integer", "minimum": 0 },
+            "inner": { "type": "string" },
+            "inner_type": { "type": "string" },
+            "seed": {
+              "oneOf": [
+                { "type": "integer", "minimum": 0 },
+                { "type": "null" }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "pss_fundamental", "pss_stabilization", "pss_harmonics", "variation", "points", "start", "stop", "sweep_type"],
+          "properties": {
+            "type": { "const": "SpectrePac" },
+            "pss_fundamental": { "type": "number" },
+            "pss_stabilization": { "type": "number" },
+            "pss_harmonics": { "type": "integer", "minimum": 0 },
+            "variation": { "type": "string" },
+            "points": { "type": "integer", "minimum": 0 },
+            "start": { "type": "number" },
+            "stop": { "type": "number" },
+            "sweep_type": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "pss_fundamental", "pss_stabilization", "pss_harmonics", "output", "reference", "variation", "points", "start", "stop"],
+          "properties": {
+            "type": { "const": "SpectrePnoise" },
+            "pss_fundamental": { "type": "number" },
+            "pss_stabilization": { "type": "number" },
+            "pss_harmonics": { "type": "integer", "minimum": 0 },
+            "output": { "type": "string" },
+            "reference": { "type": "string" },
+            "variation": { "type": "string" },
+            "points": { "type": "integer", "minimum": 0 },
+            "start": { "type": "number" },
+            "stop": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "pss_fundamental", "pss_stabilization", "pss_harmonics", "output", "source", "variation", "points", "start", "stop"],
+          "properties": {
+            "type": { "const": "SpectrePxf" },
+            "pss_fundamental": { "type": "number" },
+            "pss_stabilization": { "type": "number" },
+            "pss_harmonics": { "type": "integer", "minimum": 0 },
+            "output": { "type": "string" },
+            "source": { "type": "string" },
+            "variation": { "type": "string" },
+            "points": { "type": "integer", "minimum": 0 },
+            "start": { "type": "number" },
+            "stop": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "pss_fundamental", "pss_stabilization", "pss_harmonics", "probe", "variation", "points", "start", "stop"],
+          "properties": {
+            "type": { "const": "SpectrePstb" },
+            "pss_fundamental": { "type": "number" },
+            "pss_stabilization": { "type": "number" },
+            "pss_harmonics": { "type": "integer", "minimum": 0 },
+            "probe": { "type": "string" },
+            "variation": { "type": "string" },
+            "points": { "type": "integer", "minimum": 0 },
+            "start": { "type": "number" },
+            "stop": { "type": "number" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "DcSweep": {
+      "type": "object",
+      "required": ["source", "start", "stop", "step"],
+      "properties": {
+        "source": { "type": "string" },
+        "start": { "type": "number" },
+        "stop": { "type": "number" },
+        "step": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+
+    "AcSweepParams": {
+      "type": "object",
+      "required": ["variation", "points", "start", "stop"],
+      "properties": {
+        "variation": { "type": "string" },
+        "points": { "type": "integer", "minimum": 0 },
+        "start": { "type": "number" },
+        "stop": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+
+    "SimOptions": {
+      "type": "object",
+      "description": "Simulation options -- portable settings plus per-backend overrides.",
+      "required": ["portable", "backend_specific"],
+      "properties": {
+        "portable": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/StringPair" }
+        },
+        "backend_specific": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/StringPair" }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "ModelLibrary": {
+      "type": "object",
+      "description": "Opaque PDK/model library reference with per-backend path overrides.",
+      "required": ["name", "path", "backend_paths"],
+      "properties": {
+        "name": { "type": "string" },
+        "path": { "type": "string" },
+        "corner": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "backend_paths": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "FeatureFlags": {
+      "type": "object",
+      "description": "Feature flags computed from IR content.",
+      "required": ["has_xspice", "has_osdi", "has_measures", "has_step_params", "has_control_blocks", "has_laplace_sources", "element_count"],
+      "properties": {
+        "has_xspice": { "type": "boolean" },
+        "has_osdi": { "type": "boolean" },
+        "has_measures": { "type": "boolean" },
+        "has_step_params": { "type": "boolean" },
+        "has_control_blocks": { "type": "boolean" },
+        "has_laplace_sources": { "type": "boolean" },
+        "element_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+
+    "StringPair": {
+      "description": "A two-element tuple serialized as a JSON array: [string, string].",
+      "type": "array",
+      "prefixItems": [
+        { "type": "string" },
+        { "type": "string" }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+
+    "NumberPair": {
+      "description": "A two-element tuple serialized as a JSON array: [number, number].",
+      "type": "array",
+      "prefixItems": [
+        { "type": "number" },
+        { "type": "number" }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+
+    "StringNumberPair": {
+      "description": "A two-element tuple serialized as a JSON array: [string, number].",
+      "type": "array",
+      "prefixItems": [
+        { "type": "string" },
+        { "type": "number" }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    }
+  }
+}
