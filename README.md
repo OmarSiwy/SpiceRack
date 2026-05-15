@@ -2,8 +2,6 @@
 
 Rust-powered Python library for SPICE circuit simulation. Drop-in circuit description API with a backend-neutral IR, multi-backend support, and exports for Rust, Python (PyO3), and C (FFI).
 
-Part of [Schemify](https://github.com/OmarSiwy).
-
 ## Features
 
 - **5 backends supported** -- ngspice, Xyce, LTspice, Spectre, VacaSk
