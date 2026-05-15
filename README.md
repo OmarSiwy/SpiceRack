@@ -6,15 +6,9 @@ Part of [Schemify](https://github.com/OmarSiwy).
 
 ## Features
 
-- **Backend-neutral IR** -- describe circuits once, simulate on any supported backend
-- **5 backends** -- ngspice, Xyce, LTspice, Spectre, VacaSk
+- **5 backends supported** -- ngspice, Xyce, LTspice, Spectre, VacaSk
 - **Code generators** -- SPICE3 and Spectre netlist emission from the IR
-- **Python bindings** (PyO3/maturin) -- `from pyspice_rs import Circuit`
 - **C ABI** -- link directly from C/C++/Zig
-- **Linting** -- static checks on circuit topology before simulation
-- **Verilog-A** -- inline compilation via OpenVAF
-- **Digital co-sim** -- XSPICE bridge for mixed-signal with Verilog modules
-- **Serialized IR** -- JSON interchange format for tool integration
 
 ## Quick Start
 
