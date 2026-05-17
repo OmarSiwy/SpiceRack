@@ -878,6 +878,8 @@ pub struct Circuit {
     includes: Vec<String>,
     libs: Vec<(String, String)>,
     parameters: Vec<Param>,
+    options: Vec<(String, String)>,
+    temperature: Option<f64>,
     raw_lines: Vec<String>,
     /// OSDI model paths loaded via `pre_osdi` (ngspice), `load` (vacask),
     /// or `ahdl_include` (spectre).
@@ -894,6 +896,8 @@ impl Circuit {
             includes: Vec::new(),
             libs: Vec::new(),
             parameters: Vec::new(),
+            options: Vec::new(),
+            temperature: None,
             raw_lines: Vec::new(),
             osdi_loads: Vec::new(),
         }
@@ -1567,6 +1571,14 @@ impl Circuit {
         self.parameters.push(Param::new(name, value));
     }
 
+    pub fn options(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.options.push((key.into(), value.into()));
+    }
+
+    pub fn temp(&mut self, temperature: f64) {
+        self.temperature = Some(temperature);
+    }
+
     pub fn raw_spice(&mut self, line: impl Into<String>) {
         self.raw_lines.push(line.into());
     }
@@ -1695,6 +1707,17 @@ impl fmt::Display for Circuit {
         // Libraries
         for (path, section) in &self.libs {
             writeln!(f, ".lib {} {}", path, section)?;
+        }
+
+        // Options
+        if !self.options.is_empty() {
+            let opts: Vec<String> = self.options.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+            writeln!(f, ".options {}", opts.join(" "))?;
+        }
+
+        // Temperature
+        if let Some(temp) = self.temperature {
+            writeln!(f, ".temp {}", temp)?;
         }
 
         // Parameters

@@ -462,6 +462,22 @@ impl PyCircuit {
         self.inner.parameter(name, value);
     }
 
+    #[pyo3(signature = (**kwargs))]
+    fn options(&mut self, kwargs: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
+        if let Some(dict) = kwargs {
+            for (k, v) in dict.iter() {
+                let key: String = k.extract::<String>()?;
+                let val: String = v.str()?.to_string();
+                self.inner.options(key, val);
+            }
+        }
+        Ok(())
+    }
+
+    fn temp(&mut self, temperature: f64) {
+        self.inner.temp(temperature);
+    }
+
     fn raw_spice(&mut self, line: &str) {
         self.inner.raw_spice(line);
     }
