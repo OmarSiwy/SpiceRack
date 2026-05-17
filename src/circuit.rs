@@ -1701,12 +1701,12 @@ impl fmt::Display for Circuit {
 
         // Includes
         for inc in &self.includes {
-            writeln!(f, ".include {}", inc)?;
+            writeln!(f, ".include \"{}\"", inc)?;
         }
 
         // Libraries
         for (path, section) in &self.libs {
-            writeln!(f, ".lib {} {}", path, section)?;
+            writeln!(f, ".lib \"{}\" {}", path, section)?;
         }
 
         // Options
