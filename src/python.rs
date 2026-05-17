@@ -20,6 +20,58 @@ fn measures_to_dict(measures: &[crate::result::MeasureResult]) -> HashMap<String
     measures.iter().map(|m| (m.name.clone(), m.value)).collect()
 }
 
+/// Convert an IR value to a circuit ComponentValue
+fn ir_value_to_cv(v: &crate::ir::IrValue) -> ComponentValue {
+    match v {
+        crate::ir::IrValue::Numeric { value } => ComponentValue::Numeric(*value),
+        crate::ir::IrValue::Expression { expr } => ComponentValue::Expression(expr.clone()),
+        crate::ir::IrValue::Raw { text } => ComponentValue::Raw(text.clone()),
+    }
+}
+
+/// Convert an IR waveform to a circuit Waveform
+fn ir_waveform_to_cir(wf: &crate::ir::IrWaveform) -> cir::Waveform {
+    match wf {
+        crate::ir::IrWaveform::Sin { offset, amplitude, frequency, delay, damping, phase } => {
+            cir::Waveform::Sin(cir::SinWaveform {
+                offset: *offset, amplitude: *amplitude, frequency: *frequency,
+                delay: *delay, damping: *damping, phase: *phase,
+            })
+        }
+        crate::ir::IrWaveform::Pulse { initial, pulsed, delay, rise_time, fall_time, pulse_width, period } => {
+            cir::Waveform::Pulse(cir::PulseWaveform {
+                initial: *initial, pulsed: *pulsed, delay: *delay,
+                rise_time: *rise_time, fall_time: *fall_time,
+                pulse_width: *pulse_width, period: *period,
+            })
+        }
+        crate::ir::IrWaveform::Pwl { values } => {
+            cir::Waveform::Pwl(cir::PwlWaveform { values: values.clone() })
+        }
+        crate::ir::IrWaveform::Exp { initial, pulsed, rise_delay, rise_tau, fall_delay, fall_tau } => {
+            cir::Waveform::Exp(cir::ExpWaveform {
+                initial: *initial, pulsed: *pulsed,
+                rise_delay: *rise_delay, rise_tau: *rise_tau,
+                fall_delay: *fall_delay, fall_tau: *fall_tau,
+            })
+        }
+        crate::ir::IrWaveform::Sffm { offset, amplitude, carrier_freq, modulation_index, signal_freq } => {
+            cir::Waveform::Sffm(cir::SffmWaveform {
+                offset: *offset, amplitude: *amplitude,
+                carrier_freq: *carrier_freq, modulation_index: *modulation_index,
+                signal_freq: *signal_freq,
+            })
+        }
+        crate::ir::IrWaveform::Am { amplitude, offset, modulating_freq, carrier_freq, delay } => {
+            cir::Waveform::Am(cir::AmWaveform {
+                amplitude: *amplitude, offset: *offset,
+                modulating_freq: *modulating_freq, carrier_freq: *carrier_freq,
+                delay: *delay,
+            })
+        }
+    }
+}
+
 // ── Unit bindings ──
 
 #[pyclass(name = "Unit")]
@@ -190,14 +242,27 @@ impl PyCircuit {
         self.inner.q(name, collector, base, emitter, model);
     }
 
-    #[pyo3(signature = (*, name, drain, gate, source, bulk, model))]
-    fn M(&mut self, name: &str, drain: &str, gate: &str, source: &str, bulk: &str, model: &str) {
-        self.inner.m(name, drain, gate, source, bulk, model);
+    #[pyo3(signature = (*, name, drain, gate, source, bulk, model, **kwargs))]
+    fn M(&mut self, name: &str, drain: &str, gate: &str, source: &str, bulk: &str, model: &str, kwargs: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
+        let mut params = Vec::new();
+        if let Some(dict) = kwargs {
+            for (k, v) in dict.iter() {
+                let key: String = k.extract()?;
+                let val: String = v.str()?.to_string();
+                params.push(Param::new(key, val));
+            }
+        }
+        if params.is_empty() {
+            self.inner.m(name, drain, gate, source, bulk, model);
+        } else {
+            self.inner.m_with_params(name, drain, gate, source, bulk, model, params);
+        }
+        Ok(())
     }
 
-    #[pyo3(signature = (*, name, drain, gate, source, bulk, model))]
-    fn MOSFET(&mut self, name: &str, drain: &str, gate: &str, source: &str, bulk: &str, model: &str) {
-        self.inner.m(name, drain, gate, source, bulk, model);
+    #[pyo3(signature = (*, name, drain, gate, source, bulk, model, **kwargs))]
+    fn MOSFET(&mut self, name: &str, drain: &str, gate: &str, source: &str, bulk: &str, model: &str, kwargs: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
+        self.M(name, drain, gate, source, bulk, model, kwargs)
     }
 
     #[pyo3(signature = (*, name, drain, gate, source, model))]
@@ -401,6 +466,269 @@ impl PyCircuit {
         self.inner.raw_spice(line);
     }
 
+    fn subcircuit(&mut self, subckt: &PySubcircuit) -> PyResult<()> {
+        use crate::circuit::{SubCircuitDef, Element, Mosfet, Resistor, Capacitor, Inductor,
+            VoltageSource, CurrentSource, BehavioralVoltage, BehavioralCurrent,
+            Vcvs, Vccs, Cccs, Ccvs, Diode, Bjt, Jfet, Mesfet, VSwitch, ISwitch,
+            TLine, SubcircuitInstance, XspiceInstance, MutualInductor,
+            Node, Param, Model};
+
+        let ir = &subckt.inner;
+        let pins: Vec<String> = ir.ports.iter().map(|p| p.name.clone()).collect();
+
+        let mut elements: Vec<Element> = Vec::new();
+
+        for comp in &ir.components {
+            match comp {
+                crate::ir::Component::Resistor { name, n1, n2, value, params } => {
+                    elements.push(Element::R(Resistor {
+                        name: name.clone(),
+                        n1: Node::from(n1.as_str()),
+                        n2: Node::from(n2.as_str()),
+                        value: ir_value_to_cv(value),
+                        params: params.iter().map(|(k,v)| Param::new(k.clone(), v.clone())).collect(),
+                    }));
+                }
+                crate::ir::Component::Capacitor { name, n1, n2, value, params } => {
+                    elements.push(Element::C(Capacitor {
+                        name: name.clone(),
+                        n1: Node::from(n1.as_str()),
+                        n2: Node::from(n2.as_str()),
+                        value: ir_value_to_cv(value),
+                        params: params.iter().map(|(k,v)| Param::new(k.clone(), v.clone())).collect(),
+                    }));
+                }
+                crate::ir::Component::Inductor { name, n1, n2, value, params } => {
+                    elements.push(Element::L(Inductor {
+                        name: name.clone(),
+                        n1: Node::from(n1.as_str()),
+                        n2: Node::from(n2.as_str()),
+                        value: ir_value_to_cv(value),
+                        params: params.iter().map(|(k,v)| Param::new(k.clone(), v.clone())).collect(),
+                    }));
+                }
+                crate::ir::Component::MutualInductor { name, inductor1, inductor2, coupling } => {
+                    elements.push(Element::K(MutualInductor {
+                        name: name.clone(),
+                        inductor1: inductor1.clone(),
+                        inductor2: inductor2.clone(),
+                        coupling: *coupling,
+                    }));
+                }
+                crate::ir::Component::VoltageSource { name, np, nm, value, waveform } => {
+                    elements.push(Element::V(VoltageSource {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        value: ir_value_to_cv(value),
+                        waveform: waveform.as_ref().map(ir_waveform_to_cir),
+                    }));
+                }
+                crate::ir::Component::CurrentSource { name, np, nm, value, waveform } => {
+                    elements.push(Element::I(CurrentSource {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        value: ir_value_to_cv(value),
+                        waveform: waveform.as_ref().map(ir_waveform_to_cir),
+                    }));
+                }
+                crate::ir::Component::BehavioralVoltage { name, np, nm, expression } => {
+                    elements.push(Element::BV(BehavioralVoltage {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        expression: expression.clone(),
+                    }));
+                }
+                crate::ir::Component::BehavioralCurrent { name, np, nm, expression } => {
+                    elements.push(Element::BI(BehavioralCurrent {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        expression: expression.clone(),
+                    }));
+                }
+                crate::ir::Component::Vcvs { name, np, nm, ncp, ncm, gain } => {
+                    elements.push(Element::E(Vcvs {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        ncp: Node::from(ncp.as_str()),
+                        ncm: Node::from(ncm.as_str()),
+                        gain: *gain,
+                    }));
+                }
+                crate::ir::Component::Vccs { name, np, nm, ncp, ncm, transconductance } => {
+                    elements.push(Element::G(Vccs {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        ncp: Node::from(ncp.as_str()),
+                        ncm: Node::from(ncm.as_str()),
+                        transconductance: *transconductance,
+                    }));
+                }
+                crate::ir::Component::Cccs { name, np, nm, vsense, gain } => {
+                    elements.push(Element::F(Cccs {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        vsense: vsense.clone(),
+                        gain: *gain,
+                    }));
+                }
+                crate::ir::Component::Ccvs { name, np, nm, vsense, transresistance } => {
+                    elements.push(Element::H(Ccvs {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        vsense: vsense.clone(),
+                        transresistance: *transresistance,
+                    }));
+                }
+                crate::ir::Component::Diode { name, np, nm, model, params } => {
+                    elements.push(Element::D(Diode {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        model: model.clone(),
+                        params: params.iter().map(|(k,v)| Param::new(k.clone(), v.clone())).collect(),
+                    }));
+                }
+                crate::ir::Component::Bjt { name, nc, nb, ne, model, params } => {
+                    elements.push(Element::Q(Bjt {
+                        name: name.clone(),
+                        nc: Node::from(nc.as_str()),
+                        nb: Node::from(nb.as_str()),
+                        ne: Node::from(ne.as_str()),
+                        model: model.clone(),
+                        params: params.iter().map(|(k,v)| Param::new(k.clone(), v.clone())).collect(),
+                    }));
+                }
+                crate::ir::Component::Mosfet { name, nd, ng, ns, nb, model, params } => {
+                    elements.push(Element::M(Mosfet {
+                        name: name.clone(),
+                        nd: Node::from(nd.as_str()),
+                        ng: Node::from(ng.as_str()),
+                        ns: Node::from(ns.as_str()),
+                        nb: Node::from(nb.as_str()),
+                        model: model.clone(),
+                        params: params.iter().map(|(k,v)| Param::new(k.clone(), v.clone())).collect(),
+                    }));
+                }
+                crate::ir::Component::Jfet { name, nd, ng, ns, model, params } => {
+                    elements.push(Element::J(Jfet {
+                        name: name.clone(),
+                        nd: Node::from(nd.as_str()),
+                        ng: Node::from(ng.as_str()),
+                        ns: Node::from(ns.as_str()),
+                        model: model.clone(),
+                        params: params.iter().map(|(k,v)| Param::new(k.clone(), v.clone())).collect(),
+                    }));
+                }
+                crate::ir::Component::Mesfet { name, nd, ng, ns, model, params } => {
+                    elements.push(Element::Z(Mesfet {
+                        name: name.clone(),
+                        nd: Node::from(nd.as_str()),
+                        ng: Node::from(ng.as_str()),
+                        ns: Node::from(ns.as_str()),
+                        model: model.clone(),
+                        params: params.iter().map(|(k,v)| Param::new(k.clone(), v.clone())).collect(),
+                    }));
+                }
+                crate::ir::Component::VSwitch { name, np, nm, ncp, ncm, model } => {
+                    elements.push(Element::S(VSwitch {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        ncp: Node::from(ncp.as_str()),
+                        ncm: Node::from(ncm.as_str()),
+                        model: model.clone(),
+                    }));
+                }
+                crate::ir::Component::ISwitch { name, np, nm, vcontrol, model } => {
+                    elements.push(Element::W(ISwitch {
+                        name: name.clone(),
+                        np: Node::from(np.as_str()),
+                        nm: Node::from(nm.as_str()),
+                        vcontrol: vcontrol.clone(),
+                        model: model.clone(),
+                    }));
+                }
+                crate::ir::Component::TLine { name, inp, inm, outp, outm, z0, td } => {
+                    elements.push(Element::T(TLine {
+                        name: name.clone(),
+                        inp: Node::from(inp.as_str()),
+                        inm: Node::from(inm.as_str()),
+                        outp: Node::from(outp.as_str()),
+                        outm: Node::from(outm.as_str()),
+                        z0: *z0,
+                        td: *td,
+                    }));
+                }
+                crate::ir::Component::Xspice { name, connections, model } => {
+                    elements.push(Element::A(XspiceInstance {
+                        name: name.clone(),
+                        connections: connections.clone(),
+                        model: model.clone(),
+                    }));
+                }
+                crate::ir::Component::RawSpice { line } => {
+                    elements.push(Element::RawSpice(line.clone()));
+                }
+            }
+        }
+
+        // Convert IR instances to X elements
+        for inst in &ir.instances {
+            elements.push(Element::X(SubcircuitInstance {
+                name: inst.name.clone(),
+                subcircuit_name: inst.subcircuit.clone(),
+                nodes: inst.port_mapping.iter().map(|n| Node::from(n.as_str())).collect(),
+                params: inst.parameters.iter().map(|(k,v)| Param::new(k.clone(), v.clone())).collect(),
+            }));
+        }
+
+        // Add raw_spice lines as RawSpice elements
+        for line in &ir.raw_spice {
+            elements.push(Element::RawSpice(line.clone()));
+        }
+
+        let models: Vec<Model> = ir.models.iter().map(|m| {
+            Model {
+                name: m.name.clone(),
+                kind: m.kind.clone(),
+                params: m.parameters.iter().map(|(k,v)| Param::new(k.clone(), v.clone())).collect(),
+            }
+        }).collect();
+
+        let params: Vec<Param> = ir.parameters.iter()
+            .filter_map(|p| p.default.as_ref().map(|d| Param::new(p.name.clone(), d.clone())))
+            .collect();
+
+        self.inner.subcircuit(SubCircuitDef {
+            name: ir.name.clone(),
+            pins,
+            elements,
+            models,
+            params,
+        });
+
+        // Also handle includes/libs from the subcircuit
+        for inc in &ir.includes {
+            self.inner.include(inc.as_str());
+        }
+        for (path, section) in &ir.libs {
+            self.inner.lib(path.as_str(), section.as_str());
+        }
+        for osdi in &ir.osdi_loads {
+            self.inner.osdi(osdi.as_str());
+        }
+
+        Ok(())
+    }
+
     // ── Accessors ──
 
     fn __getitem__(&self, name: &str) -> PyResult<String> {
@@ -412,6 +740,11 @@ impl PyCircuit {
 
     fn element(&self, name: &str) -> PyResult<String> {
         self.__getitem__(name)
+    }
+
+    fn set_source_value(&mut self, name: &str, value: f64) -> PyResult<()> {
+        self.inner.set_source_value(name, value)
+            .map_err(|e| PyKeyError::new_err(e))
     }
 
     fn node(&self, name: &str) -> String {
@@ -2788,8 +3121,16 @@ impl PySubcircuit {
         self.Q(name, collector, base, emitter, model);
     }
 
-    #[pyo3(signature = (*, name, drain, gate, source, bulk, model))]
-    fn M(&mut self, name: &str, drain: &str, gate: &str, source: &str, bulk: &str, model: &str) {
+    #[pyo3(signature = (*, name, drain, gate, source, bulk, model, **kwargs))]
+    fn M(&mut self, name: &str, drain: &str, gate: &str, source: &str, bulk: &str, model: &str, kwargs: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
+        let mut params = vec![];
+        if let Some(dict) = kwargs {
+            for (k, v) in dict.iter() {
+                let key: String = k.extract()?;
+                let val: String = v.str()?.to_string();
+                params.push((key, val));
+            }
+        }
         self.inner.components.push(crate::ir::Component::Mosfet {
             name: name.to_string(),
             nd: drain.to_string(),
@@ -2797,13 +3138,14 @@ impl PySubcircuit {
             ns: source.to_string(),
             nb: bulk.to_string(),
             model: model.to_string(),
-            params: vec![],
+            params,
         });
+        Ok(())
     }
 
-    #[pyo3(signature = (*, name, drain, gate, source, bulk, model))]
-    fn MOSFET(&mut self, name: &str, drain: &str, gate: &str, source: &str, bulk: &str, model: &str) {
-        self.M(name, drain, gate, source, bulk, model);
+    #[pyo3(signature = (*, name, drain, gate, source, bulk, model, **kwargs))]
+    fn MOSFET(&mut self, name: &str, drain: &str, gate: &str, source: &str, bulk: &str, model: &str, kwargs: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
+        self.M(name, drain, gate, source, bulk, model, kwargs)
     }
 
     #[pyo3(signature = (*, name, drain, gate, source, model))]

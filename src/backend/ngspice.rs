@@ -1,6 +1,6 @@
 use std::process::Command;
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_char, c_int, c_short, c_void};
 use std::sync::Mutex;
 use tempfile::NamedTempFile;
 use std::io::Write;
@@ -47,15 +47,15 @@ type NgGetVecInfoFn = unsafe extern "C" fn(*const c_char) -> *mut VecInfo;
 type NgAllVecsFn = unsafe extern "C" fn(*const c_char) -> *mut *mut c_char;
 type NgAllPlotsFn = unsafe extern "C" fn() -> *mut *mut c_char;
 
-/// ngspice vector info returned by ngGet_Vec_Info
+/// ngspice vector info returned by ngGet_Vec_Info (matches vector_info in sharedspice.h)
 #[repr(C)]
 pub struct VecInfo {
-    pub number: c_int,
-    pub vecname: *const c_char,
-    pub is_real: bool,
-    pub pdvec: *mut f64,
-    pub pdveccomp: *mut NgComplex,
-    pub length: c_int,
+    pub v_name: *const c_char,
+    pub v_type: c_int,
+    pub v_flags: c_short,
+    pub v_realdata: *mut f64,
+    pub v_compdata: *mut NgComplex,
+    pub v_length: c_int,
 }
 
 /// Complex number as used by ngspice
@@ -471,25 +471,25 @@ impl NgspiceShared {
                 return None;
             }
             let vi = &*info;
-            let len = vi.length as usize;
+            let len = vi.v_length as usize;
+            if len == 0 {
+                return None;
+            }
 
-            if vi.is_real {
-                if vi.pdvec.is_null() {
-                    return None;
-                }
-                let data = std::slice::from_raw_parts(vi.pdvec, len).to_vec();
+            // Determine real vs complex from data pointer availability
+            if !vi.v_realdata.is_null() {
+                let data = std::slice::from_raw_parts(vi.v_realdata, len).to_vec();
                 Some((true, data, Vec::new()))
-            } else {
-                if vi.pdveccomp.is_null() {
-                    return None;
-                }
-                let comp_slice = std::slice::from_raw_parts(vi.pdveccomp, len);
+            } else if !vi.v_compdata.is_null() {
+                let comp_slice = std::slice::from_raw_parts(vi.v_compdata, len);
                 let real_data: Vec<f64> = comp_slice.iter().map(|c| c.cx_real).collect();
                 let comp_data: Vec<(f64, f64)> = comp_slice
                     .iter()
                     .map(|c| (c.cx_real, c.cx_imag))
                     .collect();
                 Some((false, real_data, comp_data))
+            } else {
+                None
             }
         }
     }
@@ -528,25 +528,29 @@ impl NgspiceShared {
         let mut real_vecs = Vec::new();
         let mut complex_vecs = Vec::new();
 
-        for (idx, name) in vec_names.iter().enumerate() {
+        let mut actual_idx = 0;
+        for name in vec_names.iter() {
             // ngspice uses "plot.vecname" for qualified names
             let qualified = format!("{}.{}", plot, name);
-            let (is_real, real_data, comp_data) = self.read_vector(&qualified)
-                .or_else(|| self.read_vector(name))
-                .ok_or_else(|| {
-                    BackendError::SimulationError(format!(
-                        "Failed to read vector '{}'", name
-                    ))
-                })?;
+            let read_result = self.read_vector(&qualified)
+                .or_else(|| self.read_vector(name));
+
+            // Skip vectors that ngspice lists but cannot provide data for
+            // (e.g. #branch currents in ngspice 45 when not explicitly saved)
+            let (is_real, real_data, comp_data) = match read_result {
+                Some(data) => data,
+                None => continue,
+            };
 
             // Infer variable type from name
             let var_type = infer_var_type(name);
 
             var_infos.push(VarInfo {
-                index: idx,
+                index: actual_idx,
                 name: name.clone(),
                 var_type,
             });
+            actual_idx += 1;
 
             if is_real {
                 real_vecs.push(real_data);
@@ -768,7 +772,7 @@ fn infer_var_type(name: &str) -> String {
         "time".to_string()
     } else if lower == "frequency" {
         "frequency".to_string()
-    } else if lower.starts_with("i(") || lower.starts_with("@") {
+    } else if lower.starts_with("i(") || lower.starts_with("@") || lower.contains("#branch") {
         "current".to_string()
     } else {
         "voltage".to_string()

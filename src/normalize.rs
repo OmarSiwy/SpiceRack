@@ -68,6 +68,11 @@ pub fn is_current_name(name: &str, backend: &str) -> bool {
         return true;
     }
 
+    // ngspice #branch suffix (e.g. "vdd#branch", "v1#branch")
+    if lower.contains("#branch") {
+        return true;
+    }
+
     // Spectre/Vacask current notation: "V1:p", "I0:src"
     // These are terminal currents, identified by <name>:<terminal>
     // But only when NOT inside a v() wrapper (which would be hierarchy)
@@ -84,6 +89,7 @@ pub fn is_current_name(name: &str, backend: &str) -> bool {
 ///
 /// `"i(v1)"` -> `"i(v1)"`, `"I(V1)"` -> `"i(v1)"`,
 /// `"V1:p"` -> `"i(v1)"`, `"I0:src"` -> `"i(i0)"`
+/// `"vdd#branch"` -> `"i(vdd)"`, `"v1#branch"` -> `"i(v1)"`
 fn normalize_current(name: &str, backend: &str) -> String {
     let lower = name.to_lowercase();
 
@@ -92,6 +98,12 @@ fn normalize_current(name: &str, backend: &str) -> String {
         let inner = &lower[2..lower.len() - 1];
         let normalized_inner = normalize_hierarchy(inner, backend);
         return format!("i({})", normalized_inner);
+    }
+
+    // ngspice #branch suffix: "vdd#branch" -> "i(vdd)"
+    if let Some(hash_pos) = lower.find("#branch") {
+        let device = &lower[..hash_pos];
+        return format!("i({})", device);
     }
 
     // Spectre/Vacask terminal current: "V1:p" -> "i(v1)"

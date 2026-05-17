@@ -1594,6 +1594,19 @@ impl Circuit {
         self.elements.iter().find(|e| e.spice_name() == spice_name)
     }
 
+    pub fn element_mut(&mut self, name: &str) -> Option<&mut Element> {
+        self.elements.iter_mut().find(|e| e.name() == name)
+    }
+
+    pub fn set_source_value(&mut self, name: &str, value: f64) -> Result<(), String> {
+        match self.element_mut(name) {
+            Some(Element::V(vs)) => { vs.value = ComponentValue::Numeric(value); Ok(()) }
+            Some(Element::I(is)) => { is.value = ComponentValue::Numeric(value); Ok(()) }
+            Some(_) => Err(format!("{} is not a voltage or current source", name)),
+            None => Err(format!("element '{}' not found", name)),
+        }
+    }
+
     pub fn elements(&self) -> &[Element] {
         &self.elements
     }
