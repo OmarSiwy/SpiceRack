@@ -41,6 +41,8 @@ pkgs.rustPlatform.buildRustPackage rec {
     libffi
     libxml2
     zlib
+  ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+    pkgs.libiconv
   ];
 
   # symlinkJoin provides both llvm-config (for llvm-sys) AND unwrapped clang
@@ -65,6 +67,6 @@ pkgs.rustPlatform.buildRustPackage rec {
     description = "OpenVAF-reloaded: Verilog-A compiler for VACASK";
     homepage = "https://github.com/arpadbuermen/OpenVAF";
     license = pkgs.lib.licenses.gpl3Only;
-    platforms = pkgs.lib.platforms.linux;
+    platforms = pkgs.lib.platforms.linux ++ pkgs.lib.platforms.darwin;
   };
 }

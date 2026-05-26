@@ -31,6 +31,10 @@ let
         postInstall = (old.postInstall or "") + ''
           ln -sf $out/bin/Xyce $out/bin/xyce
         '';
+        meta = old.meta // {
+          platforms = pkgs.lib.platforms.linux ++ pkgs.lib.platforms.darwin;
+          broken = false;
+        };
       });
 
   # --- from-source path: same Trilinos, manual Xyce build ---
@@ -85,7 +89,7 @@ let
       description = "Xyce parallel SPICE simulator (from source, MPI)";
       homepage = "https://xyce.sandia.gov";
       license = pkgs.lib.licenses.gpl3;
-      platforms = [ "x86_64-linux" ];
+      platforms = pkgs.lib.platforms.linux ++ pkgs.lib.platforms.darwin;
     };
   };
 in

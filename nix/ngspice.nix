@@ -5,7 +5,11 @@
 # ngspice CLI derives from libngspice (withNgshared = false),
 # so it picks up the pinned version automatically.
 final: prev: {
-  libngspice = prev.libngspice.overrideAttrs (_old: {
+  libngspice = let
+    base = if prev.stdenv.isDarwin
+      then prev.libngspice.override { stdenv = prev.llvmPackages_18.stdenv; }
+      else prev.libngspice;
+  in base.overrideAttrs (_old: {
     version = "43";
     src = prev.fetchurl {
       url = "mirror://sourceforge/ngspice/ngspice-43.tar.gz";
