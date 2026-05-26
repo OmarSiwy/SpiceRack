@@ -47,6 +47,13 @@ pkgs.stdenv.mkDerivation rec {
     # are enabled by default in both compilers anyway).
     sed -i 's/ "-fcoroutines"//' CMakeLists.txt
 
+    # --- KLU type fix (macOS ARM64) ---
+    # On macOS ARM64: int64_t = long long, SuiteSparse_long = long.
+    # Both 64-bit but C++ treats them as different types.
+    # Replace int64_t with SuiteSparse_long in KLU template instantiations.
+    sed -i 's/int64_t/SuiteSparse_long/g' lib/klumatrix.cpp
+    sed -i 's/int64_t/SuiteSparse_long/g' lib/klubsmatrix.cpp
+
     # --- Header fixes ---
     sed -i 's|suitesparse/klu.h|klu.h|g' include/klumatrix.h
   '';
