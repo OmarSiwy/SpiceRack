@@ -39,6 +39,10 @@ pkgs.stdenv.mkDerivation rec {
     sed -i 's/boost_system boost_filesystem boost_process/boost_filesystem boost_process/' CMakeLists.txt
     # nixpkgs suitesparse puts klu.h directly in include/, not include/suitesparse/
     sed -i 's|suitesparse/klu.h|klu.h|g' include/klumatrix.h
+    # Remove hardcoded /opt/ paths for bison/flex (macOS Homebrew paths) so
+    # CMake finds the Nix-provided binaries from PATH instead.
+    sed -i '/\/opt\/bison/d' CMakeLists.txt
+    sed -i '/\/opt\/flex/d' CMakeLists.txt
   '';
 
   cmakeFlags = [
