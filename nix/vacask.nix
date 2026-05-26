@@ -1,6 +1,6 @@
 { pkgs, openvafPkg }:
 
-pkgs.gccStdenv.mkDerivation rec {
+pkgs.stdenv.mkDerivation rec {
   pname = "vacask";
   version = "unstable-2026";
 
@@ -42,14 +42,17 @@ pkgs.gccStdenv.mkDerivation rec {
     sed -i 's|set(Boost_EXTRA_LINK_DIR "''${Boost_INCLUDE_DIRS}/stage/lib")|set(Boost_EXTRA_LINK_DIR "''${Boost_LIBRARY_DIRS}")|' CMakeLists.txt
     sed -i 's/boost_system boost_filesystem boost_process/boost_filesystem boost_process/' CMakeLists.txt
 
-    # --- Force GCC compiler path ---
-    # Remove MSVC/AppleClang/else block, replace with unconditional GCC flags.
-    sed -i '/^if (DEFINED MSVC_VERSION)/,/^endif()/d' CMakeLists.txt
-    sed -i '/^# Compiler$/a add_compile_options("-fno-signaling-nans" "-fno-trapping-math" "-fcoroutines")' CMakeLists.txt
+    # --- Compiler fixes ---
+    # Remove -fcoroutines (GCC-only flag, clang rejects it; C++20 coroutines
+    # are enabled by default in both compilers anyway).
+    sed -i 's/ "-fcoroutines"//' CMakeLists.txt
 
     # --- Header fixes ---
     sed -i 's|suitesparse/klu.h|klu.h|g' include/klumatrix.h
   '';
+
+  # Suppress clang warnings that newer clang promotes to hard errors.
+  env.NIX_CFLAGS_COMPILE = "-Wno-error -Wno-defaulted-function-deleted";
 
   cmakeFlags = [
     "-DCMAKE_BUILD_TYPE=Release"
