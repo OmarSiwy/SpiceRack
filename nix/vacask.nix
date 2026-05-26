@@ -28,27 +28,21 @@ pkgs.stdenv.mkDerivation rec {
   ];
 
   postPatch = ''
-    # --- Darwin/Homebrew cleanup ---
-    # The Darwin block in CMakeLists.txt assumes Homebrew. In Nix's sandbox
-    # brew is absent, so BREW_PREFIX is empty and all derived set() calls
-    # (SuiteSparse_DIR, TOMLPP_DIR, Boost_ROOT, FLEX/BISON paths, LLVM)
-    # produce broken paths that shadow our -D cache variables.
-    # Strip every line that references BREW_PREFIX or LLVM_SYS.
-    sed -i '/BREW_PREFIX/d' CMakeLists.txt
-    sed -i '/LLVM_SYS/d' CMakeLists.txt
+    # --- Bypass all Darwin/Homebrew blocks ---
+    # The CMakeLists.txt "Darwin" blocks (lines 47, 130, 280) assume Homebrew:
+    # they call brew --prefix, set SuiteSparse_DIR/TOMLPP_DIR/Boost_ROOT to
+    # Homebrew paths, etc. None of this works in Nix's sandbox.
+    # By renaming "Darwin" the platform falls through to the Linux/generic
+    # else blocks, where all our Nix patches already apply.
+    sed -i 's/STREQUAL "Darwin"/STREQUAL "DarwinBrew"/g' CMakeLists.txt
 
-    # --- Linux block Boost fixes ---
-    # Remove Boost_NO_SYSTEM_PATHS so nix-installed boost is found.
+    # --- Linux/generic block Boost fixes ---
     sed -i 's/set(Boost_NO_SYSTEM_PATHS TRUE)//' CMakeLists.txt
-    # Remove version req and drop 'system' component (header-only in boost >=1.87).
     sed -i 's/find_package(Boost 1.88 REQUIRED COMPONENTS filesystem process system)/find_package(Boost REQUIRED COMPONENTS filesystem process)/' CMakeLists.txt
-    # Fix Boost extra link dir: cmake-found lib dir instead of manual build stage path.
     sed -i 's|set(Boost_EXTRA_LINK_DIR "''${Boost_INCLUDE_DIRS}/stage/lib")|set(Boost_EXTRA_LINK_DIR "''${Boost_LIBRARY_DIRS}")|' CMakeLists.txt
-    # Remove boost_system from link libs (header-only, no .so).
     sed -i 's/boost_system boost_filesystem boost_process/boost_filesystem boost_process/' CMakeLists.txt
 
     # --- Header fixes ---
-    # nixpkgs suitesparse puts klu.h directly in include/, not include/suitesparse/
     sed -i 's|suitesparse/klu.h|klu.h|g' include/klumatrix.h
   '';
 
