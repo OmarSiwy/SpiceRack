@@ -43,11 +43,13 @@ pkgs.stdenv.mkDerivation rec {
     # CMake finds the Nix-provided binaries from PATH instead.
     sed -i '/\/opt\/bison/d' CMakeLists.txt
     sed -i '/\/opt\/flex/d' CMakeLists.txt
-    # Disable -Werror: upstream uses -Werror but newer clang on macOS produces
-    # warnings (implicitly deleted move-assign, unhandled switch cases) that
-    # don't occur on the GCC version upstream targets.
-    sed -i 's/-Werror//g' CMakeLists.txt
   '';
+
+  # Newer clang (macOS) promotes -Wdefaulted-function-deleted to a hard error
+  # by default. The VACASK codebase has many `operator= ... = default` on
+  # classes with deleted base-class copy-assignment, triggering this across
+  # dozens of headers. Disable the diagnostic entirely.
+  env.NIX_CFLAGS_COMPILE = "-Wno-error -Wno-defaulted-function-deleted";
 
   cmakeFlags = [
     "-DCMAKE_BUILD_TYPE=Release"
