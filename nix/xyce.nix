@@ -81,7 +81,6 @@ let
     installPhase = ''
       runHook preInstall
       cmake --install . --prefix $out
-      ln -s $out/bin/Xyce $out/bin/xyce
       runHook postInstall
     '';
 
