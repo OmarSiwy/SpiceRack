@@ -43,9 +43,10 @@ pkgs.stdenv.mkDerivation rec {
     # CMake finds the Nix-provided binaries from PATH instead.
     sed -i '/\/opt\/bison/d' CMakeLists.txt
     sed -i '/\/opt\/flex/d' CMakeLists.txt
-    # Fix clang error on macOS: move assignment operator is implicitly deleted
-    # because base class Model deletes its copy assignment operator.
-    sed -i '/operator=.*OsdiModel&&/s/= default/= delete/' include/osdimodel.h
+    # Disable -Werror: upstream uses -Werror but newer clang on macOS produces
+    # warnings (implicitly deleted move-assign, unhandled switch cases) that
+    # don't occur on the GCC version upstream targets.
+    sed -i 's/-Werror//g' CMakeLists.txt
   '';
 
   cmakeFlags = [
