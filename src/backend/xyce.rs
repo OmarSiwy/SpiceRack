@@ -20,6 +20,12 @@ impl Backend for XyceSubprocess {
         }
     }
 
+    fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {
+        Box::new(crate::codegen::spice3::Spice3CodeGen {
+            dialect: crate::codegen::spice3::Spice3Dialect::Xyce,
+        })
+    }
+
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
         let mut cir_file = NamedTempFile::with_suffix(".cir")?;
         cir_file.write_all(netlist.as_bytes())?;

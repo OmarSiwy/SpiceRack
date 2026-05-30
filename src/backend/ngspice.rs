@@ -129,6 +129,12 @@ impl Backend for NgspiceSubprocess {
         "ngspice-subprocess"
     }
 
+    fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {
+        Box::new(crate::codegen::spice3::Spice3CodeGen {
+            dialect: crate::codegen::spice3::Spice3Dialect::Ngspice,
+        })
+    }
+
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
         // Write netlist to temp file
         let mut cir_file = NamedTempFile::with_suffix(".cir")?;

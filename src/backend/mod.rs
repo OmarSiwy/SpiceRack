@@ -7,6 +7,8 @@ pub mod detect;
 
 use crate::result::RawData;
 use crate::rawfile;
+use crate::codegen::CodeGen;
+use crate::codegen::spice3::{Spice3CodeGen, Spice3Dialect};
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
@@ -39,6 +41,22 @@ pub enum BackendError {
 pub trait Backend: Send + Sync {
     fn name(&self) -> &str;
     fn run(&self, netlist: &str) -> Result<RawData, BackendError>;
+
+    /// The `CodeGen` that turns backend-neutral IR into this backend's netlist
+    /// dialect. This is the only path from IR to text (ADR-0001). The default
+    /// emits the SPICE3/ngspice dialect; backends override to name their own.
+    fn codegen(&self) -> Box<dyn CodeGen> {
+        Box::new(Spice3CodeGen { dialect: Spice3Dialect::Ngspice })
+    }
+
+    /// Execute an already-emitted netlist with no further string translation.
+    /// Backends still carrying legacy string post-processing in `run` (vacask
+    /// `spice_to_vacask`, spectre `wrap_spice_for_spectre`) keep the default,
+    /// which routes through `run`; once a backend's `codegen` emits its native
+    /// dialect it overrides this to execute the text verbatim.
+    fn run_netlist(&self, netlist: &str) -> Result<RawData, BackendError> {
+        self.run(netlist)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

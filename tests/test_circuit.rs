@@ -135,8 +135,8 @@ fn test_includes_and_libs() {
     c.parameter("vdd_val", "3.3");
 
     let netlist = c.to_string();
-    assert!(netlist.contains(".include /path/to/model.lib"));
-    assert!(netlist.contains(".lib /path/to/pdk.lib tt"));
+    assert!(netlist.contains(".include \"/path/to/model.lib\""));
+    assert!(netlist.contains(".lib \"/path/to/pdk.lib\" tt"));
     assert!(netlist.contains(".param vdd_val=3.3"));
 }
 

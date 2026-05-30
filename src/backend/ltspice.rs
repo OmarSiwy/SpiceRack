@@ -45,6 +45,12 @@ impl Backend for LtspiceSubprocess {
         "ltspice"
     }
 
+    fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {
+        Box::new(crate::codegen::spice3::Spice3CodeGen {
+            dialect: crate::codegen::spice3::Spice3Dialect::Ltspice,
+        })
+    }
+
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
         let normalized = Self::normalize_netlist(netlist);
 

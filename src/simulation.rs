@@ -1,6 +1,6 @@
 use crate::circuit::Circuit;
 use crate::result::*;
-use crate::backend::{BackendError, detect_and_select_with_features, CircuitFeatures, detect};
+use crate::backend::{Backend, BackendError, detect_and_select_with_features, CircuitFeatures, detect};
 
 /// Parameter sweep definition for `.step` directives
 #[derive(Debug, Clone)]
@@ -30,6 +30,11 @@ pub struct CircuitSimulator {
     _net_directive: Option<NetDirective>,
     /// Extra lines to inject before the analysis statement (e.g., .OPTIONS HBINT)
     extra_lines: Vec<String>,
+    /// Backend-neutral IR for this simulation. When present, the netlist is
+    /// emitted by the selected backend's `CodeGen` (the production path);
+    /// when absent (legacy Rust/cabi callers) the string `build_netlist` path
+    /// is used. See ADR-0001 / issue 01.
+    ir: Option<crate::ir::CircuitIR>,
 }
 
 /// LTspice .NET directive for network parameter analysis
@@ -57,6 +62,29 @@ impl CircuitSimulator {
             step_params: Vec::new(),
             _net_directive: None,
             extra_lines: Vec::new(),
+            ir: None,
+        }
+    }
+
+    /// Attach the backend-neutral IR for this simulation. Once set, every run
+    /// emits its netlist through the selected backend's `CodeGen` instead of
+    /// `Circuit::Display`.
+    pub fn set_ir(&mut self, ir: crate::ir::CircuitIR) {
+        self.ir = Some(ir);
+    }
+
+    /// The netlist the given backend will actually run, sourced from its
+    /// `CodeGen`. Requires an attached IR; this is the IR→text path that
+    /// replaces string translation.
+    pub fn netlist_to_run(&self, backend: &dyn Backend) -> Result<String, BackendError> {
+        match &self.ir {
+            Some(ir) => backend
+                .codegen()
+                .emit_netlist(ir)
+                .map_err(|e| BackendError::SimulationError(e.to_string())),
+            None => Err(BackendError::SimulationError(
+                "no IR attached to simulator".into(),
+            )),
         }
     }
 
@@ -732,7 +760,6 @@ impl CircuitSimulator {
     }
 
     fn run(&self, analysis_stmt: &str, analysis_type: &str) -> Result<RawData, BackendError> {
-        let netlist = self.build_netlist(analysis_stmt);
         let features = CircuitFeatures {
             has_xspice: self.circuit.has_xspice(),
             has_osdi: self.circuit.has_osdi(),
@@ -747,7 +774,18 @@ impl CircuitSimulator {
             analysis_type, self.backend_override.as_deref(), &features
         )?;
         let backend_name = backend.name().to_string();
-        let mut raw = backend.run(&netlist)?;
+        // IR present → emit the netlist via the backend's CodeGen (the only
+        // IR→text path). Analyses whose `emit_analysis` arm is not yet
+        // implemented (Pss/HB/SPar/Stability/TransientNoise/Spectre*, issue 05)
+        // fall back to the legacy single-dialect string so they don't regress.
+        // Absent IR (legacy Rust/cabi callers) → legacy string build.
+        let netlist = match self.ir {
+            Some(_) => self
+                .netlist_to_run(backend.as_ref())
+                .unwrap_or_else(|_| self.build_netlist(analysis_stmt)),
+            None => self.build_netlist(analysis_stmt),
+        };
+        let mut raw = backend.run_netlist(&netlist)?;
 
         // Tag the raw data with which backend produced it (for name normalization)
         raw.backend_hint = backend_name.clone();

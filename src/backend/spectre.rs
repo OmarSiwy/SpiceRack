@@ -22,6 +22,10 @@ impl Backend for SpectreSubprocess {
         "spectre"
     }
 
+    fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {
+        Box::new(crate::codegen::spectre::SpectreCodeGen)
+    }
+
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
         let tmp_dir = TempDir::new()?;
         let scs_path = tmp_dir.path().join("circuit.scs");

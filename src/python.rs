@@ -4028,6 +4028,9 @@ impl PyTestbench {
                 sim.step(&sp.param, sp.start, sp.stop, sp.step);
             }
         }
+        // Attach the IR so the run path emits netlists through the backend's
+        // CodeGen (ADR-0001 / issue 01) rather than Circuit::Display.
+        sim.set_ir(self.build_ir());
         Ok(sim)
     }
 }
