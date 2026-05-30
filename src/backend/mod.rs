@@ -132,6 +132,21 @@ pub struct CircuitFeatures {
     pub element_count: usize,
 }
 
+impl From<&crate::ir::FeatureFlags> for CircuitFeatures {
+    fn from(f: &crate::ir::FeatureFlags) -> Self {
+        CircuitFeatures {
+            has_xspice: f.has_xspice,
+            has_osdi: f.has_osdi,
+            has_measures: f.has_measures,
+            has_step_params: f.has_step_params,
+            has_control_blocks: f.has_control_blocks,
+            has_laplace_sources: f.has_laplace_sources,
+            has_verilog_cosim: f.has_verilog_cosim,
+            element_count: f.element_count,
+        }
+    }
+}
+
 /// Which backends support XSPICE A-elements
 fn supports_xspice(backend: &str) -> bool {
     matches!(backend, "ngspice" | "ngspice-shared" | "ngspice-subprocess")

@@ -207,6 +207,39 @@ pub enum Analysis {
     SpectrePstb { pss_fundamental: f64, pss_stabilization: f64, pss_harmonics: u32, probe: String, variation: String, points: u32, start: f64, stop: f64 },
 }
 
+impl Analysis {
+    pub fn kind_str(&self) -> &str {
+        match self {
+            Analysis::Op => "op",
+            Analysis::Dc { .. } => "dc",
+            Analysis::Ac { .. } => "ac",
+            Analysis::Transient { .. } => "tran",
+            Analysis::Noise { .. } => "noise",
+            Analysis::Tf { .. } => "tf",
+            Analysis::Sensitivity { ac: Some(_), .. } => "sens_ac",
+            Analysis::Sensitivity { .. } => "sens",
+            Analysis::PoleZero { .. } => "pz",
+            Analysis::Distortion { .. } => "disto",
+            Analysis::Pss { .. } => "pss",
+            Analysis::HarmonicBalance { .. } => "hb",
+            Analysis::SPar { .. } => "sp",
+            Analysis::Stability { .. } => "stb",
+            Analysis::TransientNoise { .. } => "trannoise",
+            Analysis::Fourier { .. } => "tran",
+            Analysis::XyceSampling { .. } => "sampling",
+            Analysis::XyceEmbeddedSampling { .. } => "embedded_sampling",
+            Analysis::XycePce { .. } => "pce",
+            Analysis::XyceFft { .. } => "tran",
+            Analysis::SpectreSweep { .. } => "tran",
+            Analysis::SpectreMonteCarlo { .. } => "tran",
+            Analysis::SpectrePac { .. } => "pac",
+            Analysis::SpectrePnoise { .. } => "pnoise",
+            Analysis::SpectrePxf { .. } => "pxf",
+            Analysis::SpectrePstb { .. } => "pstb",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DcSweep {
     pub source: String,
@@ -2052,5 +2085,75 @@ mod tests {
             Component::Ccvs { transresistance, .. } => assert_eq!(*transresistance, 1e3),
             other => panic!("Expected Ccvs, got {:?}", other),
         }
+    }
+
+    // ── Issue 02: Analysis::kind_str() ──
+
+    #[test]
+    fn test_analysis_kind_str() {
+        assert_eq!(Analysis::Op.kind_str(), "op");
+        assert_eq!(
+            Analysis::Dc { sweeps: vec![] }.kind_str(),
+            "dc"
+        );
+        assert_eq!(
+            Analysis::Ac { variation: "dec".into(), points: 10, start: 1.0, stop: 1e6 }.kind_str(),
+            "ac"
+        );
+        assert_eq!(
+            Analysis::Transient { step: 1e-9, stop: 1e-6, start: None, max_step: None, uic: false }.kind_str(),
+            "tran"
+        );
+        assert_eq!(
+            Analysis::Noise { output: "out".into(), reference: "0".into(), source: "V1".into(), variation: "dec".into(), points: 10, start: 1.0, stop: 1e6, points_per_summary: None }.kind_str(),
+            "noise"
+        );
+        assert_eq!(
+            Analysis::Pss { fundamental: 1e6, stabilization: 10e-6, observe_node: "out".into(), points_per_period: 100, harmonics: 10 }.kind_str(),
+            "pss"
+        );
+        assert_eq!(
+            Analysis::HarmonicBalance { frequencies: vec![1e6], harmonics: vec![5] }.kind_str(),
+            "hb"
+        );
+        assert_eq!(
+            Analysis::Stability { probe: "p".into(), variation: "dec".into(), points: 10, start: 1.0, stop: 1e6 }.kind_str(),
+            "stb"
+        );
+        assert_eq!(
+            Analysis::TransientNoise { step: 1e-9, stop: 1e-6 }.kind_str(),
+            "trannoise"
+        );
+        assert_eq!(
+            Analysis::XyceSampling { num_samples: 100, distributions: vec![] }.kind_str(),
+            "sampling"
+        );
+        assert_eq!(
+            Analysis::SpectrePac { pss_fundamental: 1e6, pss_stabilization: 10e-6, pss_harmonics: 10, variation: "dec".into(), points: 10, start: 1.0, stop: 1e6, sweep_type: "relative".into() }.kind_str(),
+            "pac"
+        );
+    }
+
+    // ── Issue 02: FeatureFlags → CircuitFeatures ──
+
+    #[test]
+    fn test_feature_flags_to_circuit_features() {
+        let flags = FeatureFlags {
+            has_xspice: true,
+            has_osdi: false,
+            has_measures: true,
+            has_step_params: false,
+            has_control_blocks: false,
+            has_laplace_sources: true,
+            has_verilog_cosim: false,
+            element_count: 42,
+        };
+        let cf: crate::backend::CircuitFeatures = (&flags).into();
+        assert!(cf.has_xspice);
+        assert!(!cf.has_osdi);
+        assert!(cf.has_measures);
+        assert!(!cf.has_step_params);
+        assert!(cf.has_laplace_sources);
+        assert_eq!(cf.element_count, 42);
     }
 }

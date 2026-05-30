@@ -760,15 +760,18 @@ impl CircuitSimulator {
     }
 
     fn run(&self, analysis_stmt: &str, analysis_type: &str) -> Result<RawData, BackendError> {
-        let features = CircuitFeatures {
-            has_xspice: self.circuit.has_xspice(),
-            has_osdi: self.circuit.has_osdi(),
-            has_measures: !self.measures.is_empty(),
-            has_step_params: !self.step_params.is_empty(),
-            has_control_blocks: self.circuit.has_control_blocks(),
-            has_laplace_sources: self.circuit.has_laplace_sources(),
-            has_verilog_cosim: self.circuit.has_verilog_cosim(),
-            element_count: self.circuit.elements().len(),
+        let features: CircuitFeatures = match &self.ir {
+            Some(ir) => (&ir.compute_features()).into(),
+            None => CircuitFeatures {
+                has_xspice: self.circuit.has_xspice(),
+                has_osdi: self.circuit.has_osdi(),
+                has_measures: !self.measures.is_empty(),
+                has_step_params: !self.step_params.is_empty(),
+                has_control_blocks: self.circuit.has_control_blocks(),
+                has_laplace_sources: self.circuit.has_laplace_sources(),
+                has_verilog_cosim: self.circuit.has_verilog_cosim(),
+                element_count: self.circuit.elements().len(),
+            },
         };
         let backend = detect_and_select_with_features(
             analysis_type, self.backend_override.as_deref(), &features

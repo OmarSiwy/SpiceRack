@@ -1,6 +1,6 @@
 # 02 — IR-driven automatic backend selection
 
-Status: needs-triage
+Status: done
 Priority: P0
 Theme: auto-select
 
