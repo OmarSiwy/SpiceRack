@@ -923,4 +923,34 @@ mod tests {
         let s = cg.emit_component(&comp).unwrap();
         assert!(s.starts_with("//"), "xspice should be comment: {}", s);
     }
+
+    #[test]
+    fn test_spectre_model_library_uses_spectre_path() {
+        let mut backend_paths = HashMap::new();
+        backend_paths.insert("ngspice".into(), "/pdk/ngspice/sky130.lib".into());
+        backend_paths.insert("spectre".into(), "/pdk/spectre/sky130.scs".into());
+
+        let ir = CircuitIR {
+            top: Subcircuit {
+                name: "pdk_spectre".into(),
+                ports: vec![], parameters: vec![], components: vec![],
+                instances: vec![], models: vec![], raw_spice: vec![],
+                includes: vec![], libs: vec![], osdi_loads: vec![],
+                verilog_blocks: vec![],
+            },
+            testbench: None, subcircuit_defs: vec![],
+            model_libraries: vec![ModelLibrary {
+                name: "sky130".into(),
+                path: "/pdk/default/sky130.lib".into(),
+                corner: Some("tt".into()),
+                backend_paths,
+            }],
+        };
+
+        let cg = SpectreCodeGen;
+        let netlist = cg.emit_netlist(&ir).unwrap();
+        assert!(netlist.contains("include \"/pdk/spectre/sky130.scs\" section=tt"),
+            "spectre path: {}", netlist);
+        assert!(!netlist.contains("ngspice"), "no ngspice path: {}", netlist);
+    }
 }

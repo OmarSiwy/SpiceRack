@@ -1,6 +1,6 @@
 # 03 — Generic PDK: wire ModelLibrary, kill PDK-specific leaks
 
-Status: needs-triage
+Status: done
 Priority: P0
 Theme: generic PDK (goal 1)
 

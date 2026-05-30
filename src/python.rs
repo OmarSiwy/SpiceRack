@@ -3494,6 +3494,7 @@ struct PyTestbench {
     inner: crate::ir::Testbench,
     dut: crate::ir::Subcircuit,
     subcircuit_defs: Vec<crate::ir::Subcircuit>,
+    model_libraries: Vec<crate::ir::ModelLibrary>,
     backend_override: Option<String>,
 }
 
@@ -3518,6 +3519,7 @@ impl PyTestbench {
             },
             dut: dut.inner.clone(),
             subcircuit_defs: vec![],
+            model_libraries: vec![],
             backend_override: None,
         }
     }
@@ -3525,6 +3527,12 @@ impl PyTestbench {
     /// Add a subcircuit definition to the testbench
     fn add_subcircuit(&mut self, subckt: &PySubcircuit) {
         self.subcircuit_defs.push(subckt.inner.clone());
+    }
+
+    /// Attach a PDK model library. Codegen resolves the per-backend path
+    /// and corner automatically.
+    fn use_pdk(&mut self, pdk: &PyModelLibrary) {
+        self.model_libraries.push(pdk.inner.clone());
     }
 
     // ── Stimulus sources ──
@@ -3990,7 +3998,7 @@ impl PyTestbench {
             top: self.dut.clone(),
             testbench: Some(self.inner.clone()),
             subcircuit_defs: self.subcircuit_defs.clone(),
-            model_libraries: vec![],
+            model_libraries: self.model_libraries.clone(),
         }
     }
 

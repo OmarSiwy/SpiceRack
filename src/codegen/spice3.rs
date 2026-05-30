@@ -1208,4 +1208,108 @@ mod tests {
         assert!(emitted.contains(".model nmod NMOS(VTO=0.7)"), "emitted model: {}", emitted);
         assert!(original.contains(".model nmod NMOS(VTO=0.7)"), "original model: {}", original);
     }
+
+    // ── Issue 03: ModelLibrary per-backend path + corner ──
+
+    #[test]
+    fn test_model_library_backend_path_ngspice() {
+        let mut backend_paths = HashMap::new();
+        backend_paths.insert("ngspice".into(), "/pdk/ngspice/sky130.lib".into());
+        backend_paths.insert("spectre".into(), "/pdk/spectre/sky130.scs".into());
+
+        let ir = CircuitIR {
+            top: Subcircuit {
+                name: "pdk_test".into(),
+                ports: vec![], parameters: vec![], components: vec![],
+                instances: vec![], models: vec![], raw_spice: vec![],
+                includes: vec![], libs: vec![], osdi_loads: vec![],
+                verilog_blocks: vec![],
+            },
+            testbench: Some(Testbench {
+                dut: "pdk_test".into(), stimulus: vec![],
+                analyses: vec![Analysis::Op],
+                options: SimOptions::default(), saves: vec![],
+                measures: vec![], temperature: None, nominal_temperature: None,
+                initial_conditions: vec![], node_sets: vec![],
+                step_params: vec![], extra_lines: vec![],
+            }),
+            subcircuit_defs: vec![],
+            model_libraries: vec![ModelLibrary {
+                name: "sky130".into(),
+                path: "/pdk/default/sky130.lib".into(),
+                corner: Some("tt".into()),
+                backend_paths,
+            }],
+        };
+
+        // Ngspice selects its path
+        let ng = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+        let ng_netlist = ng.emit_netlist(&ir).unwrap();
+        assert!(ng_netlist.contains(".lib /pdk/ngspice/sky130.lib tt"),
+            "ngspice path: {}", ng_netlist);
+        assert!(!ng_netlist.contains("spectre"), "no spectre path in ngspice: {}", ng_netlist);
+
+        // Xyce falls back to default path (no xyce key)
+        let xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
+        let xy_netlist = xy.emit_netlist(&ir).unwrap();
+        assert!(xy_netlist.contains(".lib /pdk/default/sky130.lib tt"),
+            "xyce fallback: {}", xy_netlist);
+    }
+
+    #[test]
+    fn test_model_library_corner_switch() {
+        let ir_tt = CircuitIR {
+            top: Subcircuit {
+                name: "corner".into(),
+                ports: vec![], parameters: vec![], components: vec![],
+                instances: vec![], models: vec![], raw_spice: vec![],
+                includes: vec![], libs: vec![], osdi_loads: vec![],
+                verilog_blocks: vec![],
+            },
+            testbench: None, subcircuit_defs: vec![],
+            model_libraries: vec![ModelLibrary {
+                name: "sky130".into(),
+                path: "/pdk/sky130.lib".into(),
+                corner: Some("tt".into()),
+                backend_paths: HashMap::new(),
+            }],
+        };
+
+        let mut ir_ss = ir_tt.clone();
+        ir_ss.model_libraries[0].corner = Some("ss".into());
+
+        let cg = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+
+        let tt_netlist = cg.emit_netlist(&ir_tt).unwrap();
+        let ss_netlist = cg.emit_netlist(&ir_ss).unwrap();
+
+        assert!(tt_netlist.contains(".lib /pdk/sky130.lib tt"), "tt: {}", tt_netlist);
+        assert!(ss_netlist.contains(".lib /pdk/sky130.lib ss"), "ss: {}", ss_netlist);
+        assert!(!tt_netlist.contains("ss"), "tt has no ss");
+    }
+
+    #[test]
+    fn test_model_library_no_corner_uses_include() {
+        let ir = CircuitIR {
+            top: Subcircuit {
+                name: "nocorner".into(),
+                ports: vec![], parameters: vec![], components: vec![],
+                instances: vec![], models: vec![], raw_spice: vec![],
+                includes: vec![], libs: vec![], osdi_loads: vec![],
+                verilog_blocks: vec![],
+            },
+            testbench: None, subcircuit_defs: vec![],
+            model_libraries: vec![ModelLibrary {
+                name: "custom".into(),
+                path: "/models/custom.lib".into(),
+                corner: None,
+                backend_paths: HashMap::new(),
+            }],
+        };
+
+        let cg = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+        let netlist = cg.emit_netlist(&ir).unwrap();
+        assert!(netlist.contains(".include /models/custom.lib"), "include: {}", netlist);
+        assert!(!netlist.contains(".lib /models"), "no .lib without corner: {}", netlist);
+    }
 }
