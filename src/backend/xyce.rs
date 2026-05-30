@@ -4,7 +4,7 @@ use std::io::Write;
 
 use crate::result::RawData;
 use crate::rawfile;
-use super::{Backend, BackendError};
+use super::{Backend, BackendCapabilities, BackendError};
 
 /// Xyce subprocess backend
 pub struct XyceSubprocess {
@@ -17,6 +17,18 @@ impl Backend for XyceSubprocess {
             "xyce-parallel"
         } else {
             "xyce-serial"
+        }
+    }
+
+    fn capabilities(&self) -> BackendCapabilities {
+        BackendCapabilities {
+            xspice: false,
+            osdi: false,
+            measures: true,
+            step_params: true,
+            control_blocks: false,
+            laplace_sources: false,
+            verilog_cosim: false,
         }
     }
 

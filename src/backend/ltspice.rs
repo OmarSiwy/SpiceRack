@@ -5,7 +5,7 @@ use std::io::Write;
 
 use crate::result::RawData;
 use crate::rawfile;
-use super::{Backend, BackendError};
+use super::{Backend, BackendCapabilities, BackendError};
 
 /// LTspice subprocess backend: write .cir, run via Wine or native, read .raw
 pub struct LtspiceSubprocess {
@@ -43,6 +43,18 @@ impl LtspiceSubprocess {
 impl Backend for LtspiceSubprocess {
     fn name(&self) -> &str {
         "ltspice"
+    }
+
+    fn capabilities(&self) -> BackendCapabilities {
+        BackendCapabilities {
+            xspice: false,
+            osdi: false,
+            measures: true,
+            step_params: true,
+            control_blocks: false,
+            laplace_sources: true,
+            verilog_cosim: false,
+        }
     }
 
     fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {

@@ -4,7 +4,7 @@ use tempfile::TempDir;
 use crate::result::*;
 use crate::rawfile;
 use crate::psf;
-use super::{Backend, BackendError};
+use super::{Backend, BackendCapabilities, BackendError};
 
 /// Detected output format for Spectre results.
 #[derive(Debug, Clone, PartialEq)]
@@ -20,6 +20,18 @@ pub struct SpectreSubprocess;
 impl Backend for SpectreSubprocess {
     fn name(&self) -> &str {
         "spectre"
+    }
+
+    fn capabilities(&self) -> BackendCapabilities {
+        BackendCapabilities {
+            xspice: false,
+            osdi: true,
+            measures: false,
+            step_params: true,
+            control_blocks: false,
+            laplace_sources: false,
+            verilog_cosim: true,
+        }
     }
 
     fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {

@@ -782,13 +782,18 @@ impl CircuitSimulator {
         // implemented (Pss/HB/SPar/Stability/TransientNoise/Spectre*, issue 05)
         // fall back to the legacy single-dialect string so they don't regress.
         // Absent IR (legacy Rust/cabi callers) → legacy string build.
-        let netlist = match self.ir {
-            Some(_) => self
+        // IR present → codegen emits backend-native text, run_netlist
+        // executes verbatim. No IR → legacy SPICE string, run() applies
+        // any backend-specific translation (e.g. spice_to_vacask).
+        let mut raw = if self.ir.is_some() {
+            let netlist = self
                 .netlist_to_run(backend.as_ref())
-                .unwrap_or_else(|_| self.build_netlist(analysis_stmt)),
-            None => self.build_netlist(analysis_stmt),
+                .unwrap_or_else(|_| self.build_netlist(analysis_stmt));
+            backend.run_netlist(&netlist)?
+        } else {
+            let netlist = self.build_netlist(analysis_stmt);
+            backend.run(&netlist)?
         };
-        let mut raw = backend.run_netlist(&netlist)?;
 
         // Tag the raw data with which backend produced it (for name normalization)
         raw.backend_hint = backend_name.clone();

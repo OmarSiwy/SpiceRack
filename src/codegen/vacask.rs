@@ -16,9 +16,6 @@ impl CodeGen for VacaskCodeGen {
         lines.push(format!("// {}", ir.top.name));
         lines.push(String::new());
 
-        lines.push("simulator lang=spectre".into());
-        lines.push(String::new());
-
         // OSDI: vacask uses `load` (not `ahdl_include`)
         for path in &ir.top.osdi_loads {
             lines.push(format!("load \"{}\"", path));
@@ -36,6 +33,9 @@ impl CodeGen for VacaskCodeGen {
 
         // Model libraries
         for lib in &ir.model_libraries {
+            for setup in &lib.setup_includes {
+                lines.push(format!("include \"{}\"", setup));
+            }
             let path = lib.backend_paths
                 .get("vacask")
                 .unwrap_or(&lib.path);
@@ -121,7 +121,9 @@ impl CodeGen for VacaskCodeGen {
             }
         }
 
-        Ok(lines.join("\n"))
+        let mut out = lines.join("\n");
+        out.push('\n');
+        Ok(out)
     }
 
     fn emit_subcircuit(&self, sc: &Subcircuit) -> Result<String, CodeGenError> {
@@ -136,6 +138,7 @@ impl CodeGen for VacaskCodeGen {
 
     fn emit_analysis(&self, analysis: &Analysis) -> Result<String, CodeGenError> {
         match analysis {
+            Analysis::Op => Ok("op1 () dc".into()),
             // Vacask uses dcxf for transfer function
             Analysis::Tf { output, source } => {
                 Ok(format!("xf1 dcxf probe={} source={}", output, source))
@@ -183,5 +186,68 @@ impl CodeGen for VacaskCodeGen {
         } else {
             Ok(format!("myopts options {}", parts.join(" ")))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_vacask_model_library_uses_vacask_path() {
+        let mut backend_paths = HashMap::new();
+        backend_paths.insert("ngspice".into(), "/pdk/ngspice/sky130.lib.spice".into());
+        backend_paths.insert("vacask".into(), "/pdk/spectre/sky130.scs".into());
+
+        let ir = CircuitIR {
+            top: Subcircuit {
+                name: "pdk_test".into(),
+                ports: vec![], parameters: vec![], components: vec![],
+                instances: vec![], models: vec![], raw_spice: vec![],
+                includes: vec![], libs: vec![], osdi_loads: vec![],
+                verilog_blocks: vec![],
+            },
+            testbench: None, subcircuit_defs: vec![],
+            model_libraries: vec![ModelLibrary {
+                name: "sky130".into(),
+                path: "/pdk/default.lib".into(),
+                corner: Some("tt".into()),
+                backend_paths,
+                setup_includes: vec![],
+            }],
+        };
+
+        let cg = VacaskCodeGen;
+        let netlist = cg.emit_netlist(&ir).unwrap();
+        assert!(netlist.contains("include \"/pdk/spectre/sky130.scs\" section=tt"),
+            "vacask uses its own path: {}", netlist);
+        assert!(!netlist.contains("ngspice"), "no ngspice path: {}", netlist);
+    }
+
+    #[test]
+    fn test_vacask_model_library_fallback_to_default() {
+        let ir = CircuitIR {
+            top: Subcircuit {
+                name: "fallback".into(),
+                ports: vec![], parameters: vec![], components: vec![],
+                instances: vec![], models: vec![], raw_spice: vec![],
+                includes: vec![], libs: vec![], osdi_loads: vec![],
+                verilog_blocks: vec![],
+            },
+            testbench: None, subcircuit_defs: vec![],
+            model_libraries: vec![ModelLibrary {
+                name: "custom".into(),
+                path: "/models/custom.scs".into(),
+                corner: None,
+                backend_paths: HashMap::new(),
+                setup_includes: vec![],
+            }],
+        };
+
+        let cg = VacaskCodeGen;
+        let netlist = cg.emit_netlist(&ir).unwrap();
+        assert!(netlist.contains("include \"/models/custom.scs\""),
+            "fallback to default: {}", netlist);
     }
 }

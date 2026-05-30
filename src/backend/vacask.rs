@@ -4,28 +4,48 @@ use std::process::Command;
 use tempfile::TempDir;
 use crate::result::RawData;
 use crate::rawfile;
-use super::{Backend, BackendError};
+use super::{Backend, BackendCapabilities, BackendError};
 
 /// Vacask subprocess backend: translate SPICE→Vacask, run `vacask`, read .raw
 pub struct VacaskSubprocess;
+
+pub const VACASK_CAPS: BackendCapabilities = BackendCapabilities {
+    xspice: false,
+    osdi: true,
+    measures: false,
+    step_params: false,
+    control_blocks: false,
+    laplace_sources: false,
+    verilog_cosim: false,
+};
 
 impl Backend for VacaskSubprocess {
     fn name(&self) -> &str {
         "vacask"
     }
 
+    fn capabilities(&self) -> BackendCapabilities { VACASK_CAPS }
+
     fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {
         Box::new(crate::codegen::vacask::VacaskCodeGen)
     }
 
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
+        let vacask_netlist = spice_to_vacask(netlist);
+        self.run_vacask_netlist(&vacask_netlist)
+    }
+
+    fn run_netlist(&self, netlist: &str) -> Result<RawData, BackendError> {
+        self.run_vacask_netlist(netlist)
+    }
+}
+
+impl VacaskSubprocess {
+    fn run_vacask_netlist(&self, netlist: &str) -> Result<RawData, BackendError> {
         let tmp_dir = TempDir::new()?;
         let sim_path = tmp_dir.path().join("circuit.sim");
 
-        // Translate SPICE netlist to Vacask format
-        let vacask_netlist = spice_to_vacask(netlist);
-
-        std::fs::write(&sim_path, vacask_netlist.as_bytes())?;
+        std::fs::write(&sim_path, netlist.as_bytes())?;
 
         let output = Command::new("vacask")
             .arg(&sim_path)
@@ -43,7 +63,6 @@ impl Backend for VacaskSubprocess {
             )));
         }
 
-        // Capture stdout
         let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
 
         // Vacask names output files by analysis name (e.g., "op1.raw", "ac1.raw")
@@ -222,7 +241,7 @@ fn translate_analysis(line: &str, name: &str) -> Option<String> {
     let parts: Vec<&str> = line.split_whitespace().collect();
 
     if upper.starts_with(".OP") {
-        Some(format!("{} op", name))
+        Some(format!("{} () dc", name))
     } else if upper.starts_with(".AC") {
         // .ac dec|oct|lin N fstart fstop
         if parts.len() >= 5 {
@@ -748,19 +767,29 @@ impl Backend for VacaskLibrary {
         "vacask-shared"
     }
 
+    fn capabilities(&self) -> BackendCapabilities { VACASK_CAPS }
+
     fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {
         Box::new(crate::codegen::vacask::VacaskCodeGen)
     }
 
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
-        // Translate SPICE to Vacask format
         let vacask_netlist = spice_to_vacask(netlist);
-        let c_netlist = CString::new(vacask_netlist).map_err(|_| {
+        self.run_vacask_netlist(&vacask_netlist)
+    }
+
+    fn run_netlist(&self, netlist: &str) -> Result<RawData, BackendError> {
+        self.run_vacask_netlist(netlist)
+    }
+}
+
+impl VacaskLibrary {
+    fn run_vacask_netlist(&self, netlist: &str) -> Result<RawData, BackendError> {
+        let c_netlist = CString::new(netlist).map_err(|_| {
             BackendError::SimulationError("Netlist contains null bytes".to_string())
         })?;
 
         unsafe {
-            // Load the netlist
             let ret = (self.load_netlist)(c_netlist.as_ptr());
             if ret != 0 {
                 return Err(BackendError::SimulationError(format!(
@@ -768,7 +797,6 @@ impl Backend for VacaskLibrary {
                 )));
             }
 
-            // Run the simulation
             let ret = (self.run)();
             if ret != 0 {
                 return Err(BackendError::SimulationError(format!(
@@ -776,7 +804,6 @@ impl Backend for VacaskLibrary {
                 )));
             }
 
-            // Get the result
             let result_ptr = (self.get_result)();
             if result_ptr.is_null() {
                 return Err(BackendError::SimulationError(
@@ -786,7 +813,6 @@ impl Backend for VacaskLibrary {
 
             let result = &*result_ptr;
 
-            // Check for errors
             if result.status != 0 {
                 let err_msg = if result.error_msg.is_null() {
                     format!("Vacask simulation failed with status {}", result.status)
@@ -796,7 +822,6 @@ impl Backend for VacaskLibrary {
                 return Err(BackendError::SimulationError(err_msg));
             }
 
-            // Parse the raw data
             if result.raw_data.is_null() || result.raw_data_len == 0 {
                 return Err(BackendError::SimulationError(
                     "Vacask produced no output data".to_string()

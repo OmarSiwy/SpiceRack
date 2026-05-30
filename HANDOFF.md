@@ -1,73 +1,60 @@
 # HANDOFF — Universal SPICE wrapper
 
-Work tracked in `.scratch/universal-spice/` (PRD + 8 issues). This file =
-execution contract for whoever (human or agent) picks it up.
+All planned work complete. This file documents what was built and what
+remains as known limitations.
 
-## Git discipline (READ FIRST)
+## What was built
 
-1. **Commit after every issue fix.** One issue = one focused commit (or a short
-   series). Never batch multiple issues into one commit. Mark the issue
-   `Status: done` in its file in the same commit.
-2. **Commit before launching git worktrees / parallel worktree agents.** The
-   working tree must be clean before any `git worktree add` or parallel-agent
-   fan-out. Uncommitted changes + worktrees = lost/colliding work. Verify with
-   `git status` -> clean, then spawn.
-3. Branch per issue when working in a worktree: `issue-NN-<slug>`. Merge back to
-   `main` only after that issue's TDD tests pass.
-4. After merging a worktree, re-sync `main` and re-confirm clean tree before the
-   next fan-out.
+IR-based multi-backend architecture: circuits described as `CircuitIR`,
+emitted to ngspice/xyce/ltspice (Spice3CodeGen), spectre (SpectreCodeGen),
+and vacask (VacaskCodeGen) via a `CodeGen` trait. Auto backend selection
+from IR feature flags. PDK hotswap via `ModelLibrary` with per-backend
+paths, corner switching, and `setup_includes`. Normalized result contract
+across backends. Python API (PyO3) with PySpice-compatible surface.
 
-## Two dead layers block everything (do first)
+## Issues (all resolved)
 
-- IR `CodeGen` is unwired (`emit_netlist` test-only); production text =
-  `Circuit::Display` single dialect + string translators.
-- `ModelLibrary` (PDK abstraction) is unwired; both IR builders hardcode
-  `model_libraries: vec![]`.
+| # | Title | Pri | Status |
+|---|-------|-----|--------|
+| 01 | Wire IR CodeGen into run path | P0 | **Done** |
+| 02 | IR-driven auto backend selection | P0 | **Done** |
+| 03 | Generic PDK: wire ModelLibrary, kill leaks | P0 | **Done** |
+| 04 | Vacask: real codegen + fix fabricated C API | P1 | **Done** |
+| 05 | Dialect correctness + one capability table | P1 | **Done** |
+| 06 | Result parity / Normalized Result contract | P1 | **Done** |
+| 07 | PySpice API compat + generic-API leaks | P1 | **Done** |
+| 08 | Honest backend target set + extensibility | P2 | **Done** |
+| 09 | OSDI version mismatch (ngspice 43 vs v0.4) | — | **Fixed** — removed ngspice 43 pin, nixpkgs default (44+) loads OSDI v0.4 |
+| 10 | sky130 binned-model scoped resolution | — | **External** — ngspice limitation, not a DeSpice bug |
+| 11 | gf180mcu Formula() errors | — | **Fixed** — `setup_includes` on `ModelLibrary`, all codegens + Python API |
+| 12 | vacask can't parse ngspice `.lib` | — | **Fixed** — example-level fix (only list backends with native model files) |
+| 13 | IR VoltageSource AC magnitude | — | **Fixed** — `ac_magnitude`/`ac_phase` on VoltageSource + CurrentSource |
 
-Wiring these = the P0 spine. All other issues stack on top.
+Detail for 01–08 in `.scratch/universal-spice/issues/NN-*.md` (all `Status: done`).
+Issues 09–13 were inline fixes without dedicated issue files.
 
-## Issues
+## Known limitation: sky130 binned-model resolution (#10)
 
-| # | Title | Pri | Goal | Depends |
-|---|-------|-----|------|---------|
-| 01 | Wire IR CodeGen into run path | P0 | all dialects | — |
-| 02 | IR-driven auto backend selection | P0 | auto-select | 01 |
-| 03 | Generic PDK: wire ModelLibrary, kill leaks | P0 | PDK swap | 01 |
-| 04 | Vacask: real codegen + fix fabricated C API | P1 | coverage | 01 |
-| 05 | Dialect correctness + one capability table | P1 | all dialects | 01 |
-| 06 | Result parity / Normalized Result contract | P1 | coverage | — |
-| 07 | PySpice API compat + generic-API leaks | P1 | API | — |
-| 08 | Honest backend target set + extensibility | P2 | scope | — |
+ngspice scopes model lookup inside `.subckt` wrappers. When sky130 models
+reference binned variants (`sky130_fd_pr__nfet_01v8__model.0`, `.1`, …),
+ngspice can't resolve them from within `X` instantiation scope. Affects
+all ngspice versions (tested 43 and 44.2).
 
-Detail in `.scratch/universal-spice/issues/NN-*.md`. Each has Problem, Change,
-TDD tests, Files.
+**Workarounds:** flatten the subcircuit wrapper, or use `nf=1` variants.
+**Upstream fix:** ngspice patch or bug report.
 
-## Recommended order
+## Acceptance check
 
 ```
-P0: 01 -> 02 -> 03      (sequential; 02 and 03 both need 01)
-P1: 05, 04, 06, 07      (parallelizable in worktrees once 01 merged)
-P2: 08
+grep -i 'sky130\|gf180\|tsmc' <any user circuit script>  # == empty
 ```
 
-### Parallel fan-out plan (after 01 merged to main)
+Same circuit runs on ngspice / xyce / spectre via auto-select with
+normalized results.
 
-1. `git status` -> clean. Commit anything pending.
-2. Spawn worktree agents for 05, 04, 06, 07 (06 and 07 are independent of 01 and
-   could even start earlier).
-3. Each agent: branch `issue-NN-<slug>`, TDD, commit per its own issue, return.
-4. Merge sequentially, re-running the full test suite between merges.
+## Git discipline (for future work)
 
-## Definition of done (per issue)
-
-- TDD tests in the issue file written first, then made to pass.
-- `cargo test` + Python tests (`pytest tests/`) green.
-- Issue file `Status: done`.
-- Committed. Tree clean.
-
-## Done-for-the-feature
-
-All P0+P1 green, and the acceptance check holds:
-`grep -i 'sky130\|gf180\|tsmc' <any user circuit script>` == empty, same circuit
-runs on ngspice / xyce / spectre via auto-select with normalized results.
-</content>
+1. One issue = one focused commit. Mark issue `Status: done` in same commit.
+2. Clean tree before worktree fan-out (`git status` -> clean).
+3. Branch per issue in worktrees: `issue-NN-<slug>`.
+4. Re-sync `main` and re-confirm clean tree between merges.

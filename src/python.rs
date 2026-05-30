@@ -531,7 +531,7 @@ impl PyCircuit {
                         coupling: *coupling,
                     }));
                 }
-                crate::ir::Component::VoltageSource { name, np, nm, value, waveform } => {
+                crate::ir::Component::VoltageSource { name, np, nm, value, waveform, .. } => {
                     elements.push(Element::V(VoltageSource {
                         name: name.clone(),
                         np: Node::from(np.as_str()),
@@ -540,7 +540,7 @@ impl PyCircuit {
                         waveform: waveform.as_ref().map(ir_waveform_to_cir),
                     }));
                 }
-                crate::ir::Component::CurrentSource { name, np, nm, value, waveform } => {
+                crate::ir::Component::CurrentSource { name, np, nm, value, waveform, .. } => {
                     elements.push(Element::I(CurrentSource {
                         name: name.clone(),
                         np: Node::from(np.as_str()),
@@ -2405,7 +2405,7 @@ fn add_ir_components(circuit: &mut cir::Circuit, components: &[crate::ir::Compon
             crate::ir::Component::MutualInductor { name, inductor1, inductor2, coupling } => {
                 circuit.k(name, inductor1, inductor2, *coupling);
             }
-            crate::ir::Component::VoltageSource { name, np, nm, value, waveform } => {
+            crate::ir::Component::VoltageSource { name, np, nm, value, waveform, .. } => {
                 if let Some(wf) = waveform {
                     let cir_wf = ir_waveform_to_circuit(wf);
                     circuit.v_with_waveform(name, np.as_str(), nm.as_str(), ir_value_to_component_value(value), cir_wf);
@@ -2413,7 +2413,7 @@ fn add_ir_components(circuit: &mut cir::Circuit, components: &[crate::ir::Compon
                     circuit.v(name, np.as_str(), nm.as_str(), ir_value_to_component_value(value));
                 }
             }
-            crate::ir::Component::CurrentSource { name, np, nm, value, waveform } => {
+            crate::ir::Component::CurrentSource { name, np, nm, value, waveform, .. } => {
                 if let Some(wf) = waveform {
                     let cir_wf = ir_waveform_to_circuit(wf);
                     // Use i_with_waveform if it exists, otherwise use raw approach
@@ -2767,7 +2767,7 @@ fn ir_components_to_elements(components: &[crate::ir::Component], elements: &mut
                     coupling: *coupling,
                 })
             }
-            crate::ir::Component::VoltageSource { name, np, nm, value, waveform } => {
+            crate::ir::Component::VoltageSource { name, np, nm, value, waveform, .. } => {
                 cir::Element::V(cir::VoltageSource {
                     name: name.clone(),
                     np: cir::Node::from(np.as_str()),
@@ -2776,7 +2776,7 @@ fn ir_components_to_elements(components: &[crate::ir::Component], elements: &mut
                     waveform: waveform.as_ref().map(ir_waveform_to_circuit),
                 })
             }
-            crate::ir::Component::CurrentSource { name, np, nm, value, waveform } => {
+            crate::ir::Component::CurrentSource { name, np, nm, value, waveform, .. } => {
                 cir::Element::I(cir::CurrentSource {
                     name: name.clone(),
                     np: cir::Node::from(np.as_str()),
@@ -3031,24 +3031,28 @@ impl PySubcircuit {
         });
     }
 
-    #[pyo3(signature = (*, name, positive, negative, value))]
-    fn V(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg) {
+    #[pyo3(signature = (*, name, positive, negative, value, ac=None, ac_phase=None))]
+    fn V(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg, ac: Option<f64>, ac_phase: Option<f64>) {
         self.inner.components.push(crate::ir::Component::VoltageSource {
             name: name.to_string(),
             np: positive.to_string(),
             nm: negative.to_string(),
             value: py_value_to_ir(value),
+            ac_magnitude: ac,
+            ac_phase,
             waveform: None,
         });
     }
 
-    #[pyo3(signature = (*, name, positive, negative, value))]
-    fn I(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg) {
+    #[pyo3(signature = (*, name, positive, negative, value, ac=None, ac_phase=None))]
+    fn I(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg, ac: Option<f64>, ac_phase: Option<f64>) {
         self.inner.components.push(crate::ir::Component::CurrentSource {
             name: name.to_string(),
             np: positive.to_string(),
             nm: negative.to_string(),
             value: py_value_to_ir(value),
+            ac_magnitude: ac,
+            ac_phase,
             waveform: None,
         });
     }
@@ -3245,16 +3249,19 @@ impl PySubcircuit {
 
     // ── High-level waveform sources ──
 
-    #[pyo3(signature = (*, name, positive, negative, dc_offset=0.0, offset=0.0, amplitude=1.0, frequency=1000.0))]
+    #[pyo3(signature = (*, name, positive, negative, dc_offset=0.0, offset=0.0, amplitude=1.0, frequency=1000.0, ac=None, ac_phase=None))]
     fn SinusoidalVoltageSource(
         &mut self, name: &str, positive: &str, negative: &str,
         dc_offset: f64, offset: f64, amplitude: f64, frequency: f64,
+        ac: Option<f64>, ac_phase: Option<f64>,
     ) {
         self.inner.components.push(crate::ir::Component::VoltageSource {
             name: name.to_string(),
             np: positive.to_string(),
             nm: negative.to_string(),
             value: crate::ir::IrValue::Numeric { value: dc_offset },
+            ac_magnitude: ac,
+            ac_phase,
             waveform: Some(crate::ir::IrWaveform::Sin {
                 offset, amplitude, frequency, delay: 0.0, damping: 0.0, phase: 0.0,
             }),
@@ -3272,6 +3279,8 @@ impl PySubcircuit {
             np: positive.to_string(),
             nm: negative.to_string(),
             value: crate::ir::IrValue::Numeric { value: 0.0 },
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: Some(crate::ir::IrWaveform::Pulse {
                 initial: initial_value, pulsed: pulsed_value, delay: 0.0,
                 rise_time, fall_time, pulse_width, period,
@@ -3288,6 +3297,8 @@ impl PySubcircuit {
             np: positive.to_string(),
             nm: negative.to_string(),
             value: crate::ir::IrValue::Numeric { value: 0.0 },
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: Some(crate::ir::IrWaveform::Pwl { values }),
         });
     }
@@ -3302,6 +3313,8 @@ impl PySubcircuit {
             np: positive.to_string(),
             nm: negative.to_string(),
             value: crate::ir::IrValue::Numeric { value: dc_offset },
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: Some(crate::ir::IrWaveform::Sin {
                 offset, amplitude, frequency, delay: 0.0, damping: 0.0, phase: 0.0,
             }),
@@ -3319,6 +3332,8 @@ impl PySubcircuit {
             np: positive.to_string(),
             nm: negative.to_string(),
             value: crate::ir::IrValue::Numeric { value: 0.0 },
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: Some(crate::ir::IrWaveform::Pulse {
                 initial: initial_value, pulsed: pulsed_value, delay: 0.0,
                 rise_time, fall_time, pulse_width, period,
@@ -3547,38 +3562,45 @@ impl PyTestbench {
 
     // ── Stimulus sources ──
 
-    #[pyo3(signature = (*, name, positive, negative, value))]
-    fn V(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg) {
+    #[pyo3(signature = (*, name, positive, negative, value, ac=None, ac_phase=None))]
+    fn V(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg, ac: Option<f64>, ac_phase: Option<f64>) {
         self.inner.stimulus.push(crate::ir::Component::VoltageSource {
             name: name.to_string(),
             np: positive.to_string(),
             nm: negative.to_string(),
             value: py_value_to_ir(value),
+            ac_magnitude: ac,
+            ac_phase,
             waveform: None,
         });
     }
 
-    #[pyo3(signature = (*, name, positive, negative, value))]
-    fn I(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg) {
+    #[pyo3(signature = (*, name, positive, negative, value, ac=None, ac_phase=None))]
+    fn I(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg, ac: Option<f64>, ac_phase: Option<f64>) {
         self.inner.stimulus.push(crate::ir::Component::CurrentSource {
             name: name.to_string(),
             np: positive.to_string(),
             nm: negative.to_string(),
             value: py_value_to_ir(value),
+            ac_magnitude: ac,
+            ac_phase,
             waveform: None,
         });
     }
 
-    #[pyo3(signature = (*, name, positive, negative, dc_offset=0.0, offset=0.0, amplitude=1.0, frequency=1000.0))]
+    #[pyo3(signature = (*, name, positive, negative, dc_offset=0.0, offset=0.0, amplitude=1.0, frequency=1000.0, ac=None, ac_phase=None))]
     fn SinusoidalVoltageSource(
         &mut self, name: &str, positive: &str, negative: &str,
         dc_offset: f64, offset: f64, amplitude: f64, frequency: f64,
+        ac: Option<f64>, ac_phase: Option<f64>,
     ) {
         self.inner.stimulus.push(crate::ir::Component::VoltageSource {
             name: name.to_string(),
             np: positive.to_string(),
             nm: negative.to_string(),
             value: crate::ir::IrValue::Numeric { value: dc_offset },
+            ac_magnitude: ac,
+            ac_phase,
             waveform: Some(crate::ir::IrWaveform::Sin {
                 offset, amplitude, frequency, delay: 0.0, damping: 0.0, phase: 0.0,
             }),
@@ -3596,6 +3618,8 @@ impl PyTestbench {
             np: positive.to_string(),
             nm: negative.to_string(),
             value: crate::ir::IrValue::Numeric { value: 0.0 },
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: Some(crate::ir::IrWaveform::Pulse {
                 initial: initial_value, pulsed: pulsed_value, delay: 0.0,
                 rise_time, fall_time, pulse_width, period,
@@ -3612,6 +3636,8 @@ impl PyTestbench {
             np: positive.to_string(),
             nm: negative.to_string(),
             value: crate::ir::IrValue::Numeric { value: 0.0 },
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: Some(crate::ir::IrWaveform::Pwl { values }),
         });
     }
@@ -4063,8 +4089,8 @@ struct PyModelLibrary {
 #[pymethods]
 impl PyModelLibrary {
     #[new]
-    #[pyo3(signature = (path, corner=None, **backend_paths))]
-    fn new(path: &str, corner: Option<&str>, backend_paths: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Self> {
+    #[pyo3(signature = (path, corner=None, setup_includes=None, **backend_paths))]
+    fn new(path: &str, corner: Option<&str>, setup_includes: Option<Vec<String>>, backend_paths: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Self> {
         let mut bp = std::collections::HashMap::new();
         if let Some(dict) = backend_paths {
             for (k, v) in dict.iter() {
@@ -4083,6 +4109,7 @@ impl PyModelLibrary {
                 path: path.to_string(),
                 corner: corner.map(|s| s.to_string()),
                 backend_paths: bp,
+                setup_includes: setup_includes.unwrap_or_default(),
             },
         })
     }

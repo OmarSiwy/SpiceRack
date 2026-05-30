@@ -1,45 +1,31 @@
 """
 Example 01: Voltage Divider
 
-A simple resistive voltage divider demonstrating basic circuit construction.
-Vin = 10V, R1 = 2kOhm, R2 = 1kOhm
-Vout = Vin * R2 / (R1 + R2) = 10 * 1k / (2k + 1k) = 3.333V
+Resistive voltage divider: Vin=10V, R1=2k, R2=1k.
+Expected Vout = 10 * 1k / (2k + 1k) = 3.333V.
 """
-from pyspice_rs import Circuit
+import pyspice_rs as ps
 from pyspice_rs.unit import u_V, u_kOhm
 
-circuit = Circuit("Voltage Divider")
+# ── DUT ──
 
-# DC voltage source: 10V between input node and ground
-circuit.V(
-    name="in",
-    positive="input",
-    negative=circuit.gnd,
-    value=10 @ u_V,
-)
+dut = ps.Subcircuit("divider", ["vin", "vout"])
+dut.R(name="top", positive="vin", negative="vout", value=2 @ u_kOhm)
+dut.R(name="bot", positive="vout", negative=dut.gnd, value=1 @ u_kOhm)
 
-# Upper resistor: 2kOhm from input to output
-circuit.R(
-    name="1",
-    positive="input",
-    negative="output",
-    value=2 @ u_kOhm,
-)
+expected = 10 * 1000 / (2000 + 1000)
 
-# Lower resistor: 1kOhm from output to ground
-circuit.R(
-    name="2",
-    positive="output",
-    negative=circuit.gnd,
-    value=1 @ u_kOhm,
-)
+# ── Simulate ──
 
-# Print the SPICE netlist
-print(circuit)
+tb = ps.Testbench(dut)
+tb.V(name="supply", positive="vin", negative=dut.gnd, value=10 @ u_V)
+tb.with_backend("ngspice")
 
-# Expected output voltage
-r1 = 2000
-r2 = 1000
-vin = 10
-vout = vin * r2 / (r1 + r2)
-print(f"\nExpected Vout = {vout:.3f} V")
+try:
+    op = tb.operating_point()
+    vout = op["vout"]
+    print(f"V(vout)   = {vout:.4f} V")
+    print(f"Expected  = {expected:.4f} V")
+    print(f"Match: {'yes' if abs(vout - expected) < 0.01 else 'NO'}")
+except RuntimeError as e:
+    print(f"Skipped (ngspice not available): {e}")

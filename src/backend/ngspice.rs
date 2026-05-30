@@ -7,7 +7,7 @@ use std::io::Write;
 
 use crate::result::{RawData, VarInfo};
 use crate::rawfile;
-use super::{Backend, BackendError};
+use super::{Backend, BackendCapabilities, BackendError};
 
 // ── dlopen/dlsym FFI ──
 
@@ -124,10 +124,22 @@ struct CallbackState {
 /// NgSpice subprocess backend: write .cir, run `ngspice -b`, read .raw
 pub struct NgspiceSubprocess;
 
+pub const NGSPICE_CAPS: BackendCapabilities = BackendCapabilities {
+    xspice: true,
+    osdi: true,
+    measures: true,
+    step_params: false,
+    control_blocks: true,
+    laplace_sources: true,
+    verilog_cosim: true,
+};
+
 impl Backend for NgspiceSubprocess {
     fn name(&self) -> &str {
         "ngspice-subprocess"
     }
+
+    fn capabilities(&self) -> BackendCapabilities { NGSPICE_CAPS }
 
     fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {
         Box::new(crate::codegen::spice3::Spice3CodeGen {
@@ -614,6 +626,8 @@ impl Backend for NgspiceShared {
         "ngspice-shared"
     }
 
+    fn capabilities(&self) -> BackendCapabilities { NGSPICE_CAPS }
+
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
         // Clear previous output
         if let Ok(mut output) = unsafe { &*self.cb_state }.output.lock() {
@@ -667,6 +681,8 @@ impl Backend for NgspiceSharedStreaming {
     fn name(&self) -> &str {
         "ngspice-shared-streaming"
     }
+
+    fn capabilities(&self) -> BackendCapabilities { NGSPICE_CAPS }
 
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
         self.shared.run(netlist)

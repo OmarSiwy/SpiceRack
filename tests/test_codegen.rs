@@ -18,6 +18,8 @@ fn resistor_divider_ir() -> CircuitIR {
                     np: "input".into(),
                     nm: "0".into(),
                     value: IrValue::Numeric { value: 10.0 },
+                    ac_magnitude: None,
+                    ac_phase: None,
                     waveform: None,
                 },
                 Component::Resistor {
@@ -92,6 +94,8 @@ fn mosfet_inverter_ir() -> CircuitIR {
                     np: "vdd".into(),
                     nm: "0".into(),
                     value: IrValue::Numeric { value: 3.3 },
+                    ac_magnitude: None,
+                    ac_phase: None,
                     waveform: None,
                 },
             ],
@@ -147,6 +151,8 @@ fn subcircuit_ir() -> CircuitIR {
                     np: "vdd".into(),
                     nm: "0".into(),
                     value: IrValue::Numeric { value: 1.8 },
+                    ac_magnitude: None,
+                    ac_phase: None,
                     waveform: None,
                 },
             ],
@@ -243,6 +249,8 @@ fn waveform_ir() -> CircuitIR {
                     np: "vsin".into(),
                     nm: "0".into(),
                     value: IrValue::Numeric { value: 0.0 },
+                    ac_magnitude: None,
+                    ac_phase: None,
                     waveform: Some(IrWaveform::Sin {
                         offset: 1.0,
                         amplitude: 0.5,
@@ -257,6 +265,8 @@ fn waveform_ir() -> CircuitIR {
                     np: "vpul".into(),
                     nm: "0".into(),
                     value: IrValue::Numeric { value: 0.0 },
+                    ac_magnitude: None,
+                    ac_phase: None,
                     waveform: Some(IrWaveform::Pulse {
                         initial: 0.0,
                         pulsed: 1.8,
@@ -272,6 +282,8 @@ fn waveform_ir() -> CircuitIR {
                     np: "vpwl".into(),
                     nm: "0".into(),
                     value: IrValue::Numeric { value: 0.0 },
+                    ac_magnitude: None,
+                    ac_phase: None,
                     waveform: Some(IrWaveform::Pwl {
                         values: vec![(0.0, 0.0), (1e-6, 1.8), (2e-6, 0.0)],
                     }),

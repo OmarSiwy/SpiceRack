@@ -189,6 +189,9 @@ impl CodeGen for SpectreCodeGen {
 
         // Model libraries
         for lib in &ir.model_libraries {
+            for setup in &lib.setup_includes {
+                lines.push(format!("include \"{}\"", setup));
+            }
             let path = lib.backend_paths
                 .get("spectre")
                 .unwrap_or(&lib.path);
@@ -320,15 +323,27 @@ impl CodeGen for SpectreCodeGen {
                 format!("k{} mutual_inductor coupling={} ind1=l{} ind2=l{}",
                     name.to_lowercase(), coupling, inductor1.to_lowercase(), inductor2.to_lowercase())
             }
-            Component::VoltageSource { name, np, nm, value, waveform } => {
+            Component::VoltageSource { name, np, nm, value, ac_magnitude, ac_phase, waveform } => {
                 let mut s = format!("v{} ({} {}) vsource dc={}", name.to_lowercase(), np, nm, self.emit_value(value));
+                if let Some(mag) = ac_magnitude {
+                    s.push_str(&format!(" mag={}", mag));
+                    if let Some(phase) = ac_phase {
+                        s.push_str(&format!(" phase={}", phase));
+                    }
+                }
                 if let Some(wf) = waveform {
                     s.push_str(&format!(" {}", self.emit_waveform_params(wf)));
                 }
                 s
             }
-            Component::CurrentSource { name, np, nm, value, waveform } => {
+            Component::CurrentSource { name, np, nm, value, ac_magnitude, ac_phase, waveform } => {
                 let mut s = format!("i{} ({} {}) isource dc={}", name.to_lowercase(), np, nm, self.emit_value(value));
+                if let Some(mag) = ac_magnitude {
+                    s.push_str(&format!(" mag={}", mag));
+                    if let Some(phase) = ac_phase {
+                        s.push_str(&format!(" phase={}", phase));
+                    }
+                }
                 if let Some(wf) = waveform {
                     s.push_str(&format!(" {}", self.emit_waveform_params(wf)));
                 }
@@ -658,6 +673,8 @@ mod tests {
                         np: "input".into(),
                         nm: "0".into(),
                         value: IrValue::Numeric { value: 10.0 },
+                        ac_magnitude: None,
+                        ac_phase: None,
                         waveform: None,
                     },
                     Component::Resistor {
@@ -758,6 +775,8 @@ mod tests {
             np: "out".into(),
             nm: "0".into(),
             value: IrValue::Numeric { value: 0.0 },
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: Some(IrWaveform::Sin {
                 offset: 1.65,
                 amplitude: 1.65,
@@ -773,6 +792,8 @@ mod tests {
             np: "out".into(),
             nm: "0".into(),
             value: IrValue::Numeric { value: 0.0 },
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: Some(IrWaveform::Pulse {
                 initial: 0.0,
                 pulsed: 3.3,
@@ -952,6 +973,7 @@ mod tests {
                 path: "/pdk/default/sky130.lib".into(),
                 corner: Some("tt".into()),
                 backend_paths,
+                setup_includes: vec![],
             }],
         };
 
@@ -960,5 +982,29 @@ mod tests {
         assert!(netlist.contains("include \"/pdk/spectre/sky130.scs\" section=tt"),
             "spectre path: {}", netlist);
         assert!(!netlist.contains("ngspice"), "no ngspice path: {}", netlist);
+    }
+
+    #[test]
+    fn test_spectre_voltage_source_ac() {
+        let cg = SpectreCodeGen;
+
+        let v = Component::VoltageSource {
+            name: "in".into(), np: "inp".into(), nm: "0".into(),
+            value: IrValue::Numeric { value: 0.0 },
+            ac_magnitude: Some(1.0), ac_phase: Some(45.0),
+            waveform: None,
+        };
+        let s = cg.emit_component(&v).unwrap();
+        assert!(s.contains("mag=1"), "spectre ac mag: {}", s);
+        assert!(s.contains("phase=45"), "spectre ac phase: {}", s);
+
+        let v_no_ac = Component::VoltageSource {
+            name: "dd".into(), np: "vdd".into(), nm: "0".into(),
+            value: IrValue::Numeric { value: 3.3 },
+            ac_magnitude: None, ac_phase: None,
+            waveform: None,
+        };
+        let s = cg.emit_component(&v_no_ac).unwrap();
+        assert!(!s.contains("mag="), "no mag without ac: {}", s);
     }
 }

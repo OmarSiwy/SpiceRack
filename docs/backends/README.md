@@ -15,11 +15,17 @@ analysis capabilities, output formats, and platform requirements.
 
 ## Not Supported
 
-| Simulator | Reason |
-|-----------|--------|
-| Qucsator | Effectively abandoned (last release 2020), poor transient/HB engines, fixed timestep only |
-| HSPICE | Commercial, no batch mode documentation publicly available |
-| PSpice | Legacy, superseded by other tools |
+| Simulator | Reason | Status |
+|-----------|--------|--------|
+| Qspice | Free, modern (Mike Engelhardt / Qorvo), SPICE-compatible netlist | Future candidate |
+| HSPICE | Commercial, no batch mode documentation publicly available | No plans |
+| PSpice | Legacy, superseded by other tools | No plans |
+| Qucsator | Effectively abandoned (last release 2020), poor transient/HB engines | No plans |
+| Eldo / SIMetrix / CppSim | Niche commercial or academic tools | No plans |
+
+Adding a new backend requires implementing the `Backend` trait (which includes
+`capabilities()`) and registering a `BackendKind` variant. Compile-time
+exhaustiveness catches missing capability entries.
 
 ## Analysis Compatibility Matrix
 

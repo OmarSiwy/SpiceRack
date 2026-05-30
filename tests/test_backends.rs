@@ -285,7 +285,7 @@ fn test_vacask_translate_tran_analysis() {
 fn test_vacask_translate_op_analysis() {
     let input = ".title test\nV1 in 0 1\n.op\n.end";
     let output = pyspice::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("op"));
+    assert!(output.contains("() dc"), "expected '() dc' in: {}", output);
 }
 
 #[test]

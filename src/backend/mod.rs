@@ -41,6 +41,7 @@ pub enum BackendError {
 pub trait Backend: Send + Sync {
     fn name(&self) -> &str;
     fn run(&self, netlist: &str) -> Result<RawData, BackendError>;
+    fn capabilities(&self) -> BackendCapabilities;
 
     /// The `CodeGen` that turns backend-neutral IR into this backend's netlist
     /// dialect. This is the only path from IR to text (ADR-0001). The default
@@ -104,6 +105,64 @@ impl BackendKind {
             Self::Spectre => "spectre",
         }
     }
+
+    pub fn capabilities(&self) -> BackendCapabilities {
+        match self {
+            Self::NgspiceSubprocess | Self::NgspiceShared => ngspice::NGSPICE_CAPS,
+            Self::XyceSerial | Self::XyceParallel => BackendCapabilities {
+                xspice: false,
+                osdi: false,
+                measures: true,
+                step_params: true,
+                control_blocks: false,
+                laplace_sources: false,
+                verilog_cosim: false,
+            },
+            Self::Ltspice { .. } => BackendCapabilities {
+                xspice: false,
+                osdi: false,
+                measures: true,
+                step_params: true,
+                control_blocks: false,
+                laplace_sources: true,
+                verilog_cosim: false,
+            },
+            Self::Vacask | Self::VacaskShared => vacask::VACASK_CAPS,
+            Self::Spectre => BackendCapabilities {
+                xspice: false,
+                osdi: true,
+                measures: false,
+                step_params: true,
+                control_blocks: false,
+                laplace_sources: false,
+                verilog_cosim: true,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BackendCapabilities {
+    pub xspice: bool,
+    pub osdi: bool,
+    pub measures: bool,
+    pub step_params: bool,
+    pub control_blocks: bool,
+    pub laplace_sources: bool,
+    pub verilog_cosim: bool,
+}
+
+impl BackendCapabilities {
+    pub fn supports_features(&self, features: &CircuitFeatures) -> bool {
+        if features.has_xspice && !self.xspice { return false; }
+        if features.has_osdi && !self.osdi { return false; }
+        if features.has_measures && !self.measures { return false; }
+        if features.has_step_params && !self.step_params { return false; }
+        if features.has_control_blocks && !self.control_blocks { return false; }
+        if features.has_laplace_sources && !self.laplace_sources { return false; }
+        if features.has_verilog_cosim && !self.verilog_cosim { return false; }
+        true
+    }
 }
 
 /// Circuit feature flags that affect backend selection.
@@ -145,62 +204,6 @@ impl From<&crate::ir::FeatureFlags> for CircuitFeatures {
             element_count: f.element_count,
         }
     }
-}
-
-/// Which backends support XSPICE A-elements
-fn supports_xspice(backend: &str) -> bool {
-    matches!(backend, "ngspice" | "ngspice-shared" | "ngspice-subprocess")
-}
-
-/// Which backends support OSDI (Verilog-A compiled model) loading
-fn supports_osdi(backend: &str) -> bool {
-    matches!(backend, "ngspice" | "ngspice-shared" | "ngspice-subprocess"
-        | "vacask" | "vacask-shared"
-        | "spectre")
-}
-
-/// Which backends support .meas / .MEASURE directives
-fn supports_measures(backend: &str) -> bool {
-    matches!(backend, "ngspice" | "ngspice-shared" | "ngspice-subprocess"
-        | "xyce" | "xyce-serial" | "xyce-parallel"
-        | "ltspice")
-}
-
-/// Which backends support .step param sweeps natively
-fn supports_step(backend: &str) -> bool {
-    matches!(backend, "xyce" | "xyce-serial" | "xyce-parallel"
-        | "ltspice"
-        | "spectre")
-}
-
-/// Which backends support .control blocks
-fn supports_control_blocks(backend: &str) -> bool {
-    matches!(backend, "ngspice" | "ngspice-shared" | "ngspice-subprocess")
-}
-
-/// Which backends support Verilog co-simulation
-fn supports_verilog_cosim(backend: &str) -> bool {
-    matches!(backend, "ngspice" | "ngspice-shared" | "ngspice-subprocess"
-        | "spectre")
-}
-
-/// Which backends support Laplace-domain B-source expressions
-fn supports_laplace(backend: &str) -> bool {
-    matches!(backend, "ngspice" | "ngspice-shared" | "ngspice-subprocess"
-        | "ltspice")
-}
-
-/// Check if a backend supports all required circuit features.
-/// Returns false if any required feature is unsupported.
-fn backend_supports_features(backend: &str, features: &CircuitFeatures) -> bool {
-    if features.has_xspice && !supports_xspice(backend) { return false; }
-    if features.has_osdi && !supports_osdi(backend) { return false; }
-    if features.has_measures && !supports_measures(backend) { return false; }
-    if features.has_step_params && !supports_step(backend) { return false; }
-    if features.has_control_blocks && !supports_control_blocks(backend) { return false; }
-    if features.has_laplace_sources && !supports_laplace(backend) { return false; }
-    if features.has_verilog_cosim && !supports_verilog_cosim(backend) { return false; }
-    true
 }
 
 /// Analysis routing preferences — which backends support which analyses
@@ -267,8 +270,7 @@ pub fn detect_and_select_with_features(
             if !name.starts_with(pref) {
                 continue;
             }
-            // Skip backends that don't support required circuit features
-            if !backend_supports_features(name, features) {
+            if !kind.capabilities().supports_features(features) {
                 continue;
             }
             return create_backend_from_kind(kind);
@@ -328,27 +330,194 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_supports_xspice() {
-        assert!(supports_xspice("ngspice"));
-        assert!(supports_xspice("ngspice-shared"));
-        assert!(supports_xspice("ngspice-subprocess"));
-        assert!(!supports_xspice("xyce"));
-        assert!(!supports_xspice("ltspice"));
-        assert!(!supports_xspice("vacask"));
-        assert!(!supports_xspice("vacask-shared"));
-        assert!(!supports_xspice("spectre"));
+    fn test_capabilities_supports_features_xspice() {
+        let caps_with = BackendCapabilities {
+            xspice: true,
+            osdi: false,
+            measures: false,
+            step_params: false,
+            control_blocks: false,
+            laplace_sources: false,
+            verilog_cosim: false,
+        };
+        let caps_without = BackendCapabilities {
+            xspice: false,
+            ..caps_with
+        };
+        let features = CircuitFeatures { has_xspice: true, ..Default::default() };
+        assert!(caps_with.supports_features(&features));
+        assert!(!caps_without.supports_features(&features));
     }
 
     #[test]
-    fn test_supports_osdi() {
-        assert!(supports_osdi("ngspice"));
-        assert!(supports_osdi("ngspice-shared"));
-        assert!(supports_osdi("ngspice-subprocess"));
-        assert!(supports_osdi("vacask"));
-        assert!(supports_osdi("vacask-shared"));
-        assert!(supports_osdi("spectre"));
-        assert!(!supports_osdi("xyce"));
-        assert!(!supports_osdi("ltspice"));
+    fn test_capabilities_supports_features_all_false_passes() {
+        let caps = BackendCapabilities {
+            xspice: false,
+            osdi: false,
+            measures: false,
+            step_params: false,
+            control_blocks: false,
+            laplace_sources: false,
+            verilog_cosim: false,
+        };
+        let features = CircuitFeatures::default();
+        assert!(caps.supports_features(&features));
+    }
+
+    #[test]
+    fn test_capabilities_supports_features_combined() {
+        let caps = BackendCapabilities {
+            xspice: true,
+            osdi: false,
+            measures: true,
+            step_params: false,
+            control_blocks: false,
+            laplace_sources: false,
+            verilog_cosim: false,
+        };
+        let features_both = CircuitFeatures {
+            has_xspice: true,
+            has_measures: true,
+            ..Default::default()
+        };
+        let features_missing = CircuitFeatures {
+            has_xspice: true,
+            has_osdi: true,
+            ..Default::default()
+        };
+        assert!(caps.supports_features(&features_both));
+        assert!(!caps.supports_features(&features_missing));
+    }
+
+    #[test]
+    fn test_ngspice_capabilities() {
+        let b = ngspice::NgspiceSubprocess;
+        let c = b.capabilities();
+        assert!(c.xspice);
+        assert!(c.osdi);
+        assert!(c.measures);
+        assert!(!c.step_params);
+        assert!(c.control_blocks);
+        assert!(c.laplace_sources);
+        assert!(c.verilog_cosim);
+    }
+
+    #[test]
+    fn test_xyce_capabilities() {
+        let b = xyce::XyceSubprocess { parallel: false };
+        let c = b.capabilities();
+        assert!(!c.xspice);
+        assert!(!c.osdi);
+        assert!(c.measures);
+        assert!(c.step_params);
+        assert!(!c.control_blocks);
+        assert!(!c.laplace_sources);
+        assert!(!c.verilog_cosim);
+    }
+
+    #[test]
+    fn test_ltspice_capabilities() {
+        let b = ltspice::LtspiceSubprocess {
+            executable: std::path::PathBuf::from("ltspice"),
+            use_wine: false,
+            fast_access: false,
+        };
+        let c = b.capabilities();
+        assert!(!c.xspice);
+        assert!(!c.osdi);
+        assert!(c.measures);
+        assert!(c.step_params);
+        assert!(!c.control_blocks);
+        assert!(c.laplace_sources);
+        assert!(!c.verilog_cosim);
+    }
+
+    #[test]
+    fn test_vacask_capabilities() {
+        let b = vacask::VacaskSubprocess;
+        let c = b.capabilities();
+        assert!(!c.xspice);
+        assert!(c.osdi);
+        assert!(!c.measures);
+        assert!(!c.step_params);
+        assert!(!c.control_blocks);
+        assert!(!c.laplace_sources);
+        assert!(!c.verilog_cosim);
+    }
+
+    #[test]
+    fn test_spectre_capabilities() {
+        let b = spectre::SpectreSubprocess;
+        let c = b.capabilities();
+        assert!(!c.xspice);
+        assert!(c.osdi);
+        assert!(!c.measures);
+        assert!(c.step_params);
+        assert!(!c.control_blocks);
+        assert!(!c.laplace_sources);
+        assert!(c.verilog_cosim);
+    }
+
+    #[test]
+    fn test_backendkind_capabilities_match_trait() {
+        let cases: Vec<(BackendKind, Box<dyn Backend>)> = vec![
+            (BackendKind::NgspiceSubprocess, Box::new(ngspice::NgspiceSubprocess)),
+            (BackendKind::XyceSerial, Box::new(xyce::XyceSubprocess { parallel: false })),
+            (BackendKind::XyceParallel, Box::new(xyce::XyceSubprocess { parallel: true })),
+            (BackendKind::Ltspice {
+                executable: std::path::PathBuf::from("ltspice"),
+                use_wine: false,
+            }, Box::new(ltspice::LtspiceSubprocess {
+                executable: std::path::PathBuf::from("ltspice"),
+                use_wine: false,
+                fast_access: false,
+            })),
+            (BackendKind::Vacask, Box::new(vacask::VacaskSubprocess)),
+            (BackendKind::Spectre, Box::new(spectre::SpectreSubprocess)),
+        ];
+
+        for (kind, backend) in &cases {
+            let kc = kind.capabilities();
+            let bc = backend.capabilities();
+            assert_eq!(kc.xspice, bc.xspice, "{}", kind.display_name());
+            assert_eq!(kc.osdi, bc.osdi, "{}", kind.display_name());
+            assert_eq!(kc.measures, bc.measures, "{}", kind.display_name());
+            assert_eq!(kc.step_params, bc.step_params, "{}", kind.display_name());
+            assert_eq!(kc.control_blocks, bc.control_blocks, "{}", kind.display_name());
+            assert_eq!(kc.laplace_sources, bc.laplace_sources, "{}", kind.display_name());
+            assert_eq!(kc.verilog_cosim, bc.verilog_cosim, "{}", kind.display_name());
+        }
+    }
+
+    #[test]
+    fn test_kind_supports_features_xspice_filters_non_ngspice() {
+        let f = CircuitFeatures { has_xspice: true, ..Default::default() };
+        assert!(BackendKind::NgspiceSubprocess.capabilities().supports_features(&f));
+        assert!(!BackendKind::XyceSerial.capabilities().supports_features(&f));
+        assert!(!BackendKind::Vacask.capabilities().supports_features(&f));
+        assert!(!BackendKind::Spectre.capabilities().supports_features(&f));
+    }
+
+    #[test]
+    fn test_kind_supports_features_osdi_filters_xyce_ltspice() {
+        let f = CircuitFeatures { has_osdi: true, ..Default::default() };
+        assert!(BackendKind::NgspiceSubprocess.capabilities().supports_features(&f));
+        assert!(!BackendKind::XyceSerial.capabilities().supports_features(&f));
+        assert!(BackendKind::Vacask.capabilities().supports_features(&f));
+        assert!(BackendKind::Spectre.capabilities().supports_features(&f));
+    }
+
+    #[test]
+    fn test_kind_supports_features_step_and_measures() {
+        let f = CircuitFeatures {
+            has_step_params: true,
+            has_measures: true,
+            ..Default::default()
+        };
+        assert!(!BackendKind::NgspiceSubprocess.capabilities().supports_features(&f));
+        assert!(BackendKind::XyceSerial.capabilities().supports_features(&f));
+        assert!(!BackendKind::Vacask.capabilities().supports_features(&f));
+        assert!(!BackendKind::Spectre.capabilities().supports_features(&f));
     }
 
     #[test]
@@ -408,164 +577,6 @@ mod tests {
     }
 
     #[test]
-    fn test_supports_measures() {
-        assert!(supports_measures("ngspice"));
-        assert!(supports_measures("ngspice-shared"));
-        assert!(supports_measures("xyce"));
-        assert!(supports_measures("xyce-parallel"));
-        assert!(supports_measures("ltspice"));
-        assert!(!supports_measures("vacask"));
-        assert!(!supports_measures("vacask-shared"));
-        assert!(!supports_measures("spectre"));
-    }
-
-    #[test]
-    fn test_supports_step() {
-        assert!(supports_step("xyce"));
-        assert!(supports_step("xyce-parallel"));
-        assert!(supports_step("ltspice"));
-        assert!(supports_step("spectre"));
-        assert!(!supports_step("ngspice"));
-        assert!(!supports_step("ngspice-shared"));
-        assert!(!supports_step("vacask"));
-    }
-
-    #[test]
-    fn test_supports_control_blocks() {
-        assert!(supports_control_blocks("ngspice"));
-        assert!(supports_control_blocks("ngspice-shared"));
-        assert!(!supports_control_blocks("xyce"));
-        assert!(!supports_control_blocks("ltspice"));
-        assert!(!supports_control_blocks("vacask"));
-        assert!(!supports_control_blocks("spectre"));
-    }
-
-    #[test]
-    fn test_supports_laplace() {
-        assert!(supports_laplace("ngspice"));
-        assert!(supports_laplace("ngspice-shared"));
-        assert!(supports_laplace("ltspice"));
-        assert!(!supports_laplace("xyce"));
-        assert!(!supports_laplace("vacask"));
-        assert!(!supports_laplace("spectre"));
-    }
-
-    #[test]
-    fn test_backend_supports_features_all_false_passes_any() {
-        let f = CircuitFeatures::default();
-        assert!(backend_supports_features("ngspice", &f));
-        assert!(backend_supports_features("xyce", &f));
-        assert!(backend_supports_features("ltspice", &f));
-        assert!(backend_supports_features("vacask", &f));
-        assert!(backend_supports_features("spectre", &f));
-    }
-
-    #[test]
-    fn test_backend_supports_features_xspice_filters_non_ngspice() {
-        let f = CircuitFeatures { has_xspice: true, ..Default::default() };
-        assert!(backend_supports_features("ngspice", &f));
-        assert!(!backend_supports_features("xyce", &f));
-        assert!(!backend_supports_features("ltspice", &f));
-        assert!(!backend_supports_features("vacask", &f));
-        assert!(!backend_supports_features("spectre", &f));
-    }
-
-    #[test]
-    fn test_backend_supports_features_osdi_filters_xyce_ltspice() {
-        let f = CircuitFeatures { has_osdi: true, ..Default::default() };
-        assert!(backend_supports_features("ngspice", &f));
-        assert!(!backend_supports_features("xyce", &f));
-        assert!(!backend_supports_features("ltspice", &f));
-        assert!(backend_supports_features("vacask", &f));
-        assert!(backend_supports_features("spectre", &f));
-    }
-
-    #[test]
-    fn test_backend_supports_features_measures_filters_vacask_spectre() {
-        let f = CircuitFeatures { has_measures: true, ..Default::default() };
-        assert!(backend_supports_features("ngspice", &f));
-        assert!(backend_supports_features("xyce", &f));
-        assert!(backend_supports_features("ltspice", &f));
-        assert!(!backend_supports_features("vacask", &f));
-        assert!(!backend_supports_features("spectre", &f));
-    }
-
-    #[test]
-    fn test_backend_supports_features_step_filters_ngspice_vacask() {
-        let f = CircuitFeatures { has_step_params: true, ..Default::default() };
-        assert!(!backend_supports_features("ngspice", &f));
-        assert!(backend_supports_features("xyce", &f));
-        assert!(backend_supports_features("ltspice", &f));
-        assert!(!backend_supports_features("vacask", &f));
-        assert!(backend_supports_features("spectre", &f));
-    }
-
-    #[test]
-    fn test_backend_supports_features_control_blocks_ngspice_only() {
-        let f = CircuitFeatures { has_control_blocks: true, ..Default::default() };
-        assert!(backend_supports_features("ngspice", &f));
-        assert!(!backend_supports_features("xyce", &f));
-        assert!(!backend_supports_features("ltspice", &f));
-        assert!(!backend_supports_features("vacask", &f));
-        assert!(!backend_supports_features("spectre", &f));
-    }
-
-    #[test]
-    fn test_backend_supports_features_laplace_ngspice_ltspice() {
-        let f = CircuitFeatures { has_laplace_sources: true, ..Default::default() };
-        assert!(backend_supports_features("ngspice", &f));
-        assert!(!backend_supports_features("xyce", &f));
-        assert!(backend_supports_features("ltspice", &f));
-        assert!(!backend_supports_features("vacask", &f));
-        assert!(!backend_supports_features("spectre", &f));
-    }
-
-    #[test]
-    fn test_backend_supports_features_combined_xspice_and_measures() {
-        // XSPICE + measures → only ngspice (ngspice supports both)
-        let f = CircuitFeatures {
-            has_xspice: true,
-            has_measures: true,
-            ..Default::default()
-        };
-        assert!(backend_supports_features("ngspice", &f));
-        assert!(!backend_supports_features("xyce", &f));
-        assert!(!backend_supports_features("ltspice", &f));
-        assert!(!backend_supports_features("vacask", &f));
-        assert!(!backend_supports_features("spectre", &f));
-    }
-
-    #[test]
-    fn test_backend_supports_features_osdi_and_measures_impossible() {
-        // OSDI + measures: ngspice supports both; vacask/spectre don't do measures
-        let f = CircuitFeatures {
-            has_osdi: true,
-            has_measures: true,
-            ..Default::default()
-        };
-        assert!(backend_supports_features("ngspice", &f));
-        assert!(!backend_supports_features("xyce", &f));
-        assert!(!backend_supports_features("ltspice", &f));
-        assert!(!backend_supports_features("vacask", &f));
-        assert!(!backend_supports_features("spectre", &f));
-    }
-
-    #[test]
-    fn test_backend_supports_features_step_and_measures() {
-        // .step + .meas → xyce, ltspice (both support both)
-        let f = CircuitFeatures {
-            has_step_params: true,
-            has_measures: true,
-            ..Default::default()
-        };
-        assert!(!backend_supports_features("ngspice", &f)); // no .step
-        assert!(backend_supports_features("xyce", &f));
-        assert!(backend_supports_features("ltspice", &f));
-        assert!(!backend_supports_features("vacask", &f));
-        assert!(!backend_supports_features("spectre", &f)); // no .meas
-    }
-
-    #[test]
     fn test_circuit_features_default_all_false() {
         let f = CircuitFeatures::default();
         assert!(!f.has_xspice);
@@ -578,28 +589,6 @@ mod tests {
         assert_eq!(f.element_count, 0);
     }
 
-    #[test]
-    fn test_supports_verilog_cosim() {
-        assert!(supports_verilog_cosim("ngspice"));
-        assert!(supports_verilog_cosim("ngspice-shared"));
-        assert!(supports_verilog_cosim("ngspice-subprocess"));
-        assert!(supports_verilog_cosim("spectre"));
-        assert!(!supports_verilog_cosim("xyce"));
-        assert!(!supports_verilog_cosim("xyce-parallel"));
-        assert!(!supports_verilog_cosim("ltspice"));
-        assert!(!supports_verilog_cosim("vacask"));
-        assert!(!supports_verilog_cosim("vacask-shared"));
-    }
-
-    #[test]
-    fn test_backend_supports_features_verilog_cosim_ngspice_spectre() {
-        let f = CircuitFeatures { has_verilog_cosim: true, ..Default::default() };
-        assert!(backend_supports_features("ngspice", &f));
-        assert!(backend_supports_features("spectre", &f));
-        assert!(!backend_supports_features("xyce", &f));
-        assert!(!backend_supports_features("ltspice", &f));
-        assert!(!backend_supports_features("vacask", &f));
-    }
 }
 
 fn create_backend_by_name(name: &str, analysis_type: &str) -> Result<Box<dyn Backend>, BackendError> {

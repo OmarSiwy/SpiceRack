@@ -1,6 +1,6 @@
 # 08 — Honest backend target set (+ extensibility)
 
-Status: needs-triage
+Status: done
 Priority: P2
 Theme: scope / extensibility
 

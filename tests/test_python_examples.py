@@ -129,3 +129,18 @@ class TestExamples:
     def test_18_verilog_digital(self):
         r = run_example("18_verilog_digital.py")
         assert r.returncode == 0, r.stderr
+
+    def test_19_backend_hotswap(self):
+        r = run_example("19_backend_hotswap.py")
+        assert r.returncode == 0, r.stderr
+        assert "Backend: ngspice" in r.stdout
+
+    def test_20_pdk_hotswap(self):
+        r = run_example("20_pdk_hotswap.py")
+        assert r.returncode == 0, r.stderr
+        assert "PDK: sky130" in r.stdout
+
+    def test_21_combined_hotswap(self):
+        r = run_example("21_combined_hotswap.py")
+        assert r.returncode == 0, r.stderr
+        assert "Combined Backend" in r.stdout

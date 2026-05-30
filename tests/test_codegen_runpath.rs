@@ -54,6 +54,8 @@ fn rc_op_ir() -> CircuitIR {
             np: "vdd".into(),
             nm: "0".into(),
             value: IrValue::Numeric { value: 3.3 },
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: None,
         }],
         analyses: vec![Analysis::Op],
@@ -214,7 +216,7 @@ fn vacask_codegen_emits_native_syntax() {
     // Vacask uses Spectre-like syntax
     assert!(netlist.contains("r1 (vdd out) resistor r="), "vacask r1");
     assert!(netlist.contains("r2 (out 0) resistor r="), "vacask r2");
-    assert!(netlist.contains("op1 dc"), "vacask op");
+    assert!(netlist.contains("op1 () dc"), "vacask op");
 
     // No UNTRANSLATED lines
     assert!(!netlist.contains("UNTRANSLATED"), "no UNTRANSLATED: {}", netlist);

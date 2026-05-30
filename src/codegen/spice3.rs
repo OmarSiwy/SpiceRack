@@ -178,15 +178,18 @@ impl CodeGen for Spice3CodeGen {
     fn emit_netlist(&self, ir: &CircuitIR) -> Result<String, CodeGenError> {
         let mut lines = Vec::new();
 
-        // OSDI loads (ngspice only)
-        if self.dialect == Spice3Dialect::Ngspice {
-            for path in &ir.top.osdi_loads {
-                lines.push(format!(".pre_osdi {}", path));
-            }
-        }
-
-        // Title
+        // Title must be first line (SPICE treats line 1 as title/comment)
         lines.push(format!("* {}", ir.top.name));
+
+        // OSDI loads (ngspice only — must precede component references)
+        // pre_osdi is a control command, not a dot command
+        if self.dialect == Spice3Dialect::Ngspice && !ir.top.osdi_loads.is_empty() {
+            lines.push(".control".into());
+            for path in &ir.top.osdi_loads {
+                lines.push(format!("pre_osdi {}", path));
+            }
+            lines.push(".endc".into());
+        }
 
         // Includes
         for inc in &ir.top.includes {
@@ -200,6 +203,9 @@ impl CodeGen for Spice3CodeGen {
 
         // Model libraries
         for lib in &ir.model_libraries {
+            for setup in &lib.setup_includes {
+                lines.push(format!(".include {}", setup));
+            }
             let path = lib.backend_paths
                 .get(self.backend_name())
                 .unwrap_or(&lib.path);
@@ -346,15 +352,27 @@ impl CodeGen for Spice3CodeGen {
             Component::MutualInductor { name, inductor1, inductor2, coupling } => {
                 format!("K{} L{} L{} {}", name, inductor1, inductor2, coupling)
             }
-            Component::VoltageSource { name, np, nm, value, waveform } => {
+            Component::VoltageSource { name, np, nm, value, ac_magnitude, ac_phase, waveform } => {
                 let mut s = format!("V{} {} {} {}", name, np, nm, self.emit_value(value));
+                if let Some(mag) = ac_magnitude {
+                    s.push_str(&format!(" AC {}", mag));
+                    if let Some(phase) = ac_phase {
+                        s.push_str(&format!(" {}", phase));
+                    }
+                }
                 if let Some(wf) = waveform {
                     s.push_str(&format!(" {}", self.emit_waveform(wf)));
                 }
                 s
             }
-            Component::CurrentSource { name, np, nm, value, waveform } => {
+            Component::CurrentSource { name, np, nm, value, ac_magnitude, ac_phase, waveform } => {
                 let mut s = format!("I{} {} {} {}", name, np, nm, self.emit_value(value));
+                if let Some(mag) = ac_magnitude {
+                    s.push_str(&format!(" AC {}", mag));
+                    if let Some(phase) = ac_phase {
+                        s.push_str(&format!(" {}", phase));
+                    }
+                }
                 if let Some(wf) = waveform {
                     s.push_str(&format!(" {}", self.emit_waveform(wf)));
                 }
@@ -686,6 +704,8 @@ mod tests {
                         np: "input".into(),
                         nm: "0".into(),
                         value: IrValue::Numeric { value: 10.0 },
+                        ac_magnitude: None,
+                        ac_phase: None,
                         waveform: None,
                     },
                     Component::Resistor {
@@ -787,6 +807,8 @@ mod tests {
                         np: "vdd".into(),
                         nm: "0".into(),
                         value: IrValue::Numeric { value: 3.3 },
+                        ac_magnitude: None,
+                        ac_phase: None,
                         waveform: None,
                     },
                 ],
@@ -846,6 +868,8 @@ mod tests {
                         np: "vdd".into(),
                         nm: "0".into(),
                         value: IrValue::Numeric { value: 1.8 },
+                        ac_magnitude: None,
+                        ac_phase: None,
                         waveform: None,
                     },
                 ],
@@ -931,6 +955,8 @@ mod tests {
                         np: "sin_out".into(),
                         nm: "0".into(),
                         value: IrValue::Numeric { value: 0.0 },
+                        ac_magnitude: None,
+                        ac_phase: None,
                         waveform: Some(IrWaveform::Sin {
                             offset: 1.65,
                             amplitude: 1.65,
@@ -945,6 +971,8 @@ mod tests {
                         np: "pulse_out".into(),
                         nm: "0".into(),
                         value: IrValue::Numeric { value: 0.0 },
+                        ac_magnitude: None,
+                        ac_phase: None,
                         waveform: Some(IrWaveform::Pulse {
                             initial: 0.0,
                             pulsed: 3.3,
@@ -960,6 +988,8 @@ mod tests {
                         np: "pwl_out".into(),
                         nm: "0".into(),
                         value: IrValue::Numeric { value: 0.0 },
+                        ac_magnitude: None,
+                        ac_phase: None,
                         waveform: Some(IrWaveform::Pwl {
                             values: vec![(0.0, 0.0), (1e-6, 3.3), (2e-6, 0.0)],
                         }),
@@ -1120,10 +1150,12 @@ mod tests {
             model_libraries: vec![],
         };
 
-        // ngspice emits .pre_osdi
+        // ngspice wraps OSDI loads in .control block
         let cg_ng = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
         let ng_str = cg_ng.emit_netlist(&ir).unwrap();
-        assert!(ng_str.contains(".pre_osdi /path/to/model.osdi"), "ng osdi: {}", ng_str);
+        assert!(ng_str.contains(".control\npre_osdi /path/to/model.osdi\n.endc"),
+            "ng osdi control block: {}", ng_str);
+        assert!(!ng_str.contains(".pre_osdi"), "no dot-command form: {}", ng_str);
 
         // Xyce does not
         let cg_xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
@@ -1254,6 +1286,7 @@ mod tests {
                 path: "/pdk/default/sky130.lib".into(),
                 corner: Some("tt".into()),
                 backend_paths,
+                setup_includes: vec![],
             }],
         };
 
@@ -1287,6 +1320,7 @@ mod tests {
                 path: "/pdk/sky130.lib".into(),
                 corner: Some("tt".into()),
                 backend_paths: HashMap::new(),
+                setup_includes: vec![],
             }],
         };
 
@@ -1319,6 +1353,7 @@ mod tests {
                 path: "/models/custom.lib".into(),
                 corner: None,
                 backend_paths: HashMap::new(),
+                setup_includes: vec![],
             }],
         };
 
@@ -1415,5 +1450,184 @@ mod tests {
             tf_type: "vol".into(), pz_type: "pz".into(),
         };
         assert!(cg_ng.emit_analysis(&pz).is_ok(), "pz should work on ngspice");
+    }
+
+    #[test]
+    fn test_voltage_source_ac_magnitude_and_phase() {
+        let cg = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+
+        // AC magnitude only
+        let v_ac = Component::VoltageSource {
+            name: "in".into(), np: "inp".into(), nm: "0".into(),
+            value: IrValue::Numeric { value: 0.0 },
+            ac_magnitude: Some(1.0), ac_phase: None,
+            waveform: None,
+        };
+        let s = cg.emit_component(&v_ac).unwrap();
+        assert_eq!(s, "Vin inp 0 0 AC 1", "ac mag only: {}", s);
+
+        // AC magnitude + phase
+        let v_ac_phase = Component::VoltageSource {
+            name: "in".into(), np: "inp".into(), nm: "0".into(),
+            value: IrValue::Numeric { value: 0.0 },
+            ac_magnitude: Some(1.0), ac_phase: Some(45.0),
+            waveform: None,
+        };
+        let s = cg.emit_component(&v_ac_phase).unwrap();
+        assert_eq!(s, "Vin inp 0 0 AC 1 45", "ac mag+phase: {}", s);
+
+        // No AC — regression check
+        let v_dc = Component::VoltageSource {
+            name: "dd".into(), np: "vdd".into(), nm: "0".into(),
+            value: IrValue::Numeric { value: 3.3 },
+            ac_magnitude: None, ac_phase: None,
+            waveform: None,
+        };
+        let s = cg.emit_component(&v_dc).unwrap();
+        assert_eq!(s, "Vdd vdd 0 3.3", "dc only: {}", s);
+        assert!(!s.contains("AC"), "no AC in dc-only source");
+    }
+
+    #[test]
+    fn test_current_source_ac_magnitude() {
+        let cg = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+        let i_ac = Component::CurrentSource {
+            name: "ac".into(), np: "a".into(), nm: "0".into(),
+            value: IrValue::Numeric { value: 0.0 },
+            ac_magnitude: Some(1e-3), ac_phase: Some(90.0),
+            waveform: None,
+        };
+        let s = cg.emit_component(&i_ac).unwrap();
+        assert!(s.contains("AC 0.001 90"), "current AC: {}", s);
+    }
+
+    #[test]
+    fn test_pdk_netlist_lib_before_subckt_and_components() {
+        let ir = CircuitIR {
+            top: Subcircuit {
+                name: "cs_amp_tb".into(),
+                ports: vec![], parameters: vec![],
+                components: vec![],
+                instances: vec![Instance {
+                    name: "dut".into(),
+                    subcircuit: "cs_amp".into(),
+                    port_mapping: vec!["vdd".into(), "vin".into(), "vout".into()],
+                    parameters: vec![],
+                }],
+                models: vec![], raw_spice: vec![],
+                includes: vec![], libs: vec![], osdi_loads: vec![],
+                verilog_blocks: vec![],
+            },
+            testbench: Some(Testbench {
+                dut: "cs_amp_tb".into(), stimulus: vec![
+                    Component::VoltageSource {
+                        name: "dd".into(), np: "vdd".into(), nm: "0".into(),
+                        value: IrValue::Numeric { value: 1.8 },
+                        ac_magnitude: None, ac_phase: None,
+                        waveform: None,
+                    },
+                ],
+                analyses: vec![Analysis::Op],
+                options: SimOptions::default(), saves: vec![],
+                measures: vec![], temperature: None, nominal_temperature: None,
+                initial_conditions: vec![], node_sets: vec![],
+                step_params: vec![], extra_lines: vec![],
+            }),
+            subcircuit_defs: vec![Subcircuit {
+                name: "cs_amp".into(),
+                ports: vec![
+                    Port { name: "vdd".into(), direction: PortDirection::InOut },
+                    Port { name: "vin".into(), direction: PortDirection::Input },
+                    Port { name: "vout".into(), direction: PortDirection::Output },
+                ],
+                parameters: vec![], models: vec![],
+                components: vec![
+                    Component::Resistor {
+                        name: "drain".into(), n1: "vdd".into(), n2: "vout".into(),
+                        value: IrValue::Numeric { value: 5e3 }, params: vec![],
+                    },
+                    Component::Mosfet {
+                        name: "n1".into(), nd: "vout".into(), ng: "vin".into(),
+                        ns: "0".into(), nb: "0".into(),
+                        model: "sky130_fd_pr__nfet_01v8".into(),
+                        params: vec![],
+                    },
+                ],
+                instances: vec![], raw_spice: vec![],
+                includes: vec![], libs: vec![], osdi_loads: vec![],
+                verilog_blocks: vec![],
+            }],
+            model_libraries: vec![ModelLibrary {
+                name: "sky130".into(),
+                path: "/pdk/sky130.lib.spice".into(),
+                corner: Some("tt".into()),
+                backend_paths: HashMap::new(),
+                setup_includes: vec![],
+            }],
+        };
+
+        let cg = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+        let netlist = cg.emit_netlist(&ir).unwrap();
+
+        // Title must be line 1
+        let lines: Vec<&str> = netlist.lines().collect();
+        assert!(lines[0].starts_with("*"), "first line is title: {}", lines[0]);
+
+        // .lib must come before .subckt
+        let lib_pos = netlist.find(".lib").expect("must have .lib");
+        let subckt_pos = netlist.find(".subckt").expect("must have .subckt");
+        assert!(lib_pos < subckt_pos,
+            ".lib ({}) must come before .subckt ({}):\n{}", lib_pos, subckt_pos, netlist);
+
+        // .lib must come before components
+        let mosfet_pos = netlist.find("Mn1").expect("must have Mn1");
+        assert!(lib_pos < mosfet_pos,
+            ".lib must come before MOSFET:\n{}", netlist);
+
+        // Verify the .lib line itself
+        assert!(netlist.contains(".lib /pdk/sky130.lib.spice tt"),
+            "lib line: {}", netlist);
+    }
+
+    #[test]
+    fn test_setup_includes_emitted_before_lib() {
+        let ir = CircuitIR {
+            top: Subcircuit {
+                name: "gf180_test".into(),
+                ports: vec![], parameters: vec![], components: vec![],
+                instances: vec![], models: vec![], raw_spice: vec![],
+                includes: vec![], libs: vec![], osdi_loads: vec![],
+                verilog_blocks: vec![],
+            },
+            testbench: Some(Testbench {
+                dut: "gf180_test".into(), stimulus: vec![],
+                analyses: vec![Analysis::Op],
+                options: SimOptions::default(), saves: vec![],
+                measures: vec![], temperature: None, nominal_temperature: None,
+                initial_conditions: vec![], node_sets: vec![],
+                step_params: vec![], extra_lines: vec![],
+            }),
+            subcircuit_defs: vec![],
+            model_libraries: vec![ModelLibrary {
+                name: "gf180".into(),
+                path: "/pdk/gf180/sm141064.ngspice".into(),
+                corner: Some("typical".into()),
+                backend_paths: HashMap::new(),
+                setup_includes: vec!["/pdk/gf180/design.ngspice".into()],
+            }],
+        };
+
+        let cg = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+        let netlist = cg.emit_netlist(&ir).unwrap();
+
+        // setup_includes emitted as .include
+        assert!(netlist.contains(".include /pdk/gf180/design.ngspice"),
+            "setup include present: {}", netlist);
+
+        // setup_includes comes BEFORE the .lib
+        let setup_pos = netlist.find(".include /pdk/gf180/design.ngspice").unwrap();
+        let lib_pos = netlist.find(".lib /pdk/gf180/sm141064.ngspice typical").unwrap();
+        assert!(setup_pos < lib_pos,
+            "setup ({}) before lib ({}): {}", setup_pos, lib_pos, netlist);
     }
 }

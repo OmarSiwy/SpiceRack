@@ -102,8 +102,8 @@ pub enum Component {
     Capacitor { name: String, n1: String, n2: String, value: IrValue, params: Vec<(String, String)> },
     Inductor { name: String, n1: String, n2: String, value: IrValue, params: Vec<(String, String)> },
     MutualInductor { name: String, inductor1: String, inductor2: String, coupling: f64 },
-    VoltageSource { name: String, np: String, nm: String, value: IrValue, waveform: Option<IrWaveform> },
-    CurrentSource { name: String, np: String, nm: String, value: IrValue, waveform: Option<IrWaveform> },
+    VoltageSource { name: String, np: String, nm: String, value: IrValue, #[serde(default)] ac_magnitude: Option<f64>, #[serde(default)] ac_phase: Option<f64>, waveform: Option<IrWaveform> },
+    CurrentSource { name: String, np: String, nm: String, value: IrValue, #[serde(default)] ac_magnitude: Option<f64>, #[serde(default)] ac_phase: Option<f64>, waveform: Option<IrWaveform> },
     BehavioralVoltage { name: String, np: String, nm: String, expression: String },
     BehavioralCurrent { name: String, np: String, nm: String, expression: String },
     Vcvs { name: String, np: String, nm: String, ncp: String, ncm: String, gain: f64 },
@@ -272,6 +272,8 @@ pub struct ModelLibrary {
     pub path: String,
     pub corner: Option<String>,
     pub backend_paths: HashMap<String, String>,
+    #[serde(default)]
+    pub setup_includes: Vec<String>,
 }
 
 // ── Feature flags ──
@@ -371,7 +373,19 @@ impl CircuitIR {
         let features = self.compute_features();
         let mut issues = Vec::new();
 
-        if features.has_xspice && !supports_xspice(backend) {
+        let kind = match crate::backend::BackendKind::from_str(backend) {
+            Some(k) => k,
+            None => {
+                issues.push(Issue {
+                    severity: IssueSeverity::Error,
+                    message: format!("Unknown backend '{}'", backend),
+                });
+                return issues;
+            }
+        };
+        let caps = kind.capabilities();
+
+        if features.has_xspice && !caps.xspice {
             issues.push(Issue {
                 severity: IssueSeverity::Error,
                 message: format!(
@@ -381,7 +395,7 @@ impl CircuitIR {
             });
         }
 
-        if features.has_osdi && !supports_osdi(backend) {
+        if features.has_osdi && !caps.osdi {
             issues.push(Issue {
                 severity: IssueSeverity::Error,
                 message: format!(
@@ -391,7 +405,7 @@ impl CircuitIR {
             });
         }
 
-        if features.has_measures && !supports_measures(backend) {
+        if features.has_measures && !caps.measures {
             issues.push(Issue {
                 severity: IssueSeverity::Error,
                 message: format!(
@@ -401,7 +415,7 @@ impl CircuitIR {
             });
         }
 
-        if features.has_step_params && !supports_step(backend) {
+        if features.has_step_params && !caps.step_params {
             issues.push(Issue {
                 severity: IssueSeverity::Error,
                 message: format!(
@@ -411,7 +425,7 @@ impl CircuitIR {
             });
         }
 
-        if features.has_control_blocks && !supports_control_blocks(backend) {
+        if features.has_control_blocks && !caps.control_blocks {
             issues.push(Issue {
                 severity: IssueSeverity::Error,
                 message: format!(
@@ -421,7 +435,7 @@ impl CircuitIR {
             });
         }
 
-        if features.has_laplace_sources && !supports_laplace(backend) {
+        if features.has_laplace_sources && !caps.laplace_sources {
             issues.push(Issue {
                 severity: IssueSeverity::Warning,
                 message: format!(
@@ -462,51 +476,6 @@ impl CircuitIR {
             model_libraries: Vec::new(),
         }
     }
-}
-
-// ── Backend capability tables (mirrors src/backend/mod.rs) ──
-
-fn supports_xspice(backend: &str) -> bool {
-    matches!(backend, "ngspice" | "ngspice-shared" | "ngspice-subprocess")
-}
-
-fn supports_osdi(backend: &str) -> bool {
-    matches!(
-        backend,
-        "ngspice" | "ngspice-shared" | "ngspice-subprocess"
-            | "vacask" | "vacask-shared"
-            | "spectre"
-    )
-}
-
-fn supports_measures(backend: &str) -> bool {
-    matches!(
-        backend,
-        "ngspice" | "ngspice-shared" | "ngspice-subprocess"
-            | "xyce" | "xyce-serial" | "xyce-parallel"
-            | "ltspice"
-    )
-}
-
-fn supports_step(backend: &str) -> bool {
-    matches!(
-        backend,
-        "xyce" | "xyce-serial" | "xyce-parallel"
-            | "ltspice"
-            | "spectre"
-    )
-}
-
-fn supports_control_blocks(backend: &str) -> bool {
-    matches!(backend, "ngspice" | "ngspice-shared" | "ngspice-subprocess")
-}
-
-fn supports_laplace(backend: &str) -> bool {
-    matches!(
-        backend,
-        "ngspice" | "ngspice-shared" | "ngspice-subprocess"
-            | "ltspice"
-    )
 }
 
 // ── Conversion helpers: Circuit -> IR ──
@@ -664,6 +633,8 @@ fn convert_element(elem: &crate::circuit::Element) -> Component {
             np: v.np.spice_name().to_string(),
             nm: v.nm.spice_name().to_string(),
             value: convert_value(&v.value),
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: v.waveform.as_ref().map(convert_waveform),
         },
         Element::I(i) => Component::CurrentSource {
@@ -671,6 +642,8 @@ fn convert_element(elem: &crate::circuit::Element) -> Component {
             np: i.np.spice_name().to_string(),
             nm: i.nm.spice_name().to_string(),
             value: convert_value(&i.value),
+            ac_magnitude: None,
+            ac_phase: None,
             waveform: i.waveform.as_ref().map(convert_waveform),
         },
         Element::BV(bv) => Component::BehavioralVoltage {
@@ -893,6 +866,8 @@ mod tests {
                     np: "vdd".into(),
                     nm: "0".into(),
                     value: IrValue::Numeric { value: 3.3 },
+                    ac_magnitude: None,
+                    ac_phase: None,
                     waveform: Some(IrWaveform::Sin {
                         offset: 0.0,
                         amplitude: 1.0,
@@ -1383,6 +1358,8 @@ mod tests {
                         np: "vdd".into(),
                         nm: "0".into(),
                         value: IrValue::Numeric { value: 3.3 },
+                        ac_magnitude: None,
+                        ac_phase: None,
                         waveform: None,
                     },
                     Component::VoltageSource {
@@ -1390,6 +1367,8 @@ mod tests {
                         np: "inp".into(),
                         nm: "0".into(),
                         value: IrValue::Numeric { value: 0.0 },
+                        ac_magnitude: None,
+                        ac_phase: None,
                         waveform: Some(IrWaveform::Sin {
                             offset: 1.65,
                             amplitude: 0.1,
@@ -1501,6 +1480,7 @@ mod tests {
                     m.insert("spectre".into(), "/pdk/spectre/sky130.scs".into());
                     m
                 },
+                setup_includes: vec![],
             }],
         };
 
@@ -1897,8 +1877,8 @@ mod tests {
             Component::Capacitor { name: "1".into(), n1: "a".into(), n2: "b".into(), value: IrValue::Expression { expr: "cap_val".into() }, params: vec![] },
             Component::Inductor { name: "1".into(), n1: "a".into(), n2: "b".into(), value: IrValue::Raw { text: "10u".into() }, params: vec![] },
             Component::MutualInductor { name: "1".into(), inductor1: "L1".into(), inductor2: "L2".into(), coupling: 0.95 },
-            Component::VoltageSource { name: "1".into(), np: "a".into(), nm: "b".into(), value: IrValue::Numeric { value: 5.0 }, waveform: None },
-            Component::CurrentSource { name: "1".into(), np: "a".into(), nm: "b".into(), value: IrValue::Numeric { value: 1e-3 }, waveform: Some(IrWaveform::Pulse { initial: 0.0, pulsed: 1e-3, delay: 0.0, rise_time: 1e-9, fall_time: 1e-9, pulse_width: 5e-6, period: 10e-6 }) },
+            Component::VoltageSource { name: "1".into(), np: "a".into(), nm: "b".into(), value: IrValue::Numeric { value: 5.0 }, ac_magnitude: None, ac_phase: None, waveform: None },
+            Component::CurrentSource { name: "1".into(), np: "a".into(), nm: "b".into(), value: IrValue::Numeric { value: 1e-3 }, ac_magnitude: None, ac_phase: None, waveform: Some(IrWaveform::Pulse { initial: 0.0, pulsed: 1e-3, delay: 0.0, rise_time: 1e-9, fall_time: 1e-9, pulse_width: 5e-6, period: 10e-6 }) },
             Component::BehavioralVoltage { name: "1".into(), np: "a".into(), nm: "b".into(), expression: "V(x)*2+1".into() },
             Component::BehavioralCurrent { name: "1".into(), np: "a".into(), nm: "b".into(), expression: "I(V1)*10".into() },
             Component::Vcvs { name: "1".into(), np: "a".into(), nm: "b".into(), ncp: "c".into(), ncm: "d".into(), gain: 100.0 },
@@ -2155,5 +2135,43 @@ mod tests {
         assert!(!cf.has_step_params);
         assert!(cf.has_laplace_sources);
         assert_eq!(cf.element_count, 42);
+    }
+
+    #[test]
+    fn test_ac_magnitude_serde_roundtrip() {
+        let v_with_ac = Component::VoltageSource {
+            name: "ac".into(), np: "in".into(), nm: "0".into(),
+            value: IrValue::Numeric { value: 0.0 },
+            ac_magnitude: Some(1.0), ac_phase: Some(45.0),
+            waveform: None,
+        };
+        let json = serde_json::to_string(&v_with_ac).unwrap();
+        assert!(json.contains("\"ac_magnitude\":1.0"), "json has ac_magnitude: {}", json);
+        assert!(json.contains("\"ac_phase\":45.0"), "json has ac_phase: {}", json);
+
+        let roundtripped: Component = serde_json::from_str(&json).unwrap();
+        assert_eq!(v_with_ac, roundtripped);
+
+        // Without AC — fields should be absent (serde skip_serializing_none via default)
+        let v_no_ac = Component::VoltageSource {
+            name: "dc".into(), np: "vdd".into(), nm: "0".into(),
+            value: IrValue::Numeric { value: 3.3 },
+            ac_magnitude: None, ac_phase: None,
+            waveform: None,
+        };
+        let json_no_ac = serde_json::to_string(&v_no_ac).unwrap();
+        let rt_no_ac: Component = serde_json::from_str(&json_no_ac).unwrap();
+        assert_eq!(v_no_ac, rt_no_ac);
+
+        // Deserialize JSON without ac fields (backwards compat)
+        let old_json = r#"{"type":"VoltageSource","name":"old","np":"a","nm":"0","value":{"type":"Numeric","value":5.0},"waveform":null}"#;
+        let old_v: Component = serde_json::from_str(old_json).unwrap();
+        match old_v {
+            Component::VoltageSource { ac_magnitude, ac_phase, .. } => {
+                assert_eq!(ac_magnitude, None);
+                assert_eq!(ac_phase, None);
+            }
+            _ => panic!("Expected VoltageSource"),
+        }
     }
 }
