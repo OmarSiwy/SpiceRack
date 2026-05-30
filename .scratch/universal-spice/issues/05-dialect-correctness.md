@@ -1,6 +1,6 @@
 # 05 — Dialect correctness + single source of truth for capabilities
 
-Status: needs-triage
+Status: done
 Priority: P1
 Theme: codegen / all dialects
 

@@ -271,9 +271,12 @@ impl CodeGen for Spice3CodeGen {
                 lines.push(format!(".nodeset V({})={}", node, val));
             }
 
-            // Saves
+            // Saves — Xyce uses .PRINT, ngspice/LTspice use .save
             for save in &tb.saves {
-                lines.push(format!(".save {}", save));
+                match self.dialect {
+                    Spice3Dialect::Xyce => lines.push(format!(".PRINT DC {}", save)),
+                    _ => lines.push(format!(".save {}", save)),
+                }
             }
 
             // Measures
@@ -520,9 +523,21 @@ impl CodeGen for Spice3CodeGen {
                 s
             }
             Analysis::PoleZero { node1, node2, node3, node4, tf_type, pz_type } => {
+                if self.dialect != Spice3Dialect::Ngspice {
+                    return Err(CodeGenError::UnsupportedAnalysis {
+                        backend: self.backend_name().into(),
+                        analysis: "PoleZero".into(),
+                    });
+                }
                 format!(".pz {} {} {} {} {} {}", node1, node2, node3, node4, tf_type, pz_type)
             }
             Analysis::Distortion { variation, points, start, stop, f2overf1 } => {
+                if self.dialect != Spice3Dialect::Ngspice {
+                    return Err(CodeGenError::UnsupportedAnalysis {
+                        backend: self.backend_name().into(),
+                        analysis: "Distortion".into(),
+                    });
+                }
                 let mut s = format!(
                     ".disto {} {} {} {}",
                     variation,
@@ -1311,5 +1326,94 @@ mod tests {
         let netlist = cg.emit_netlist(&ir).unwrap();
         assert!(netlist.contains(".include /models/custom.lib"), "include: {}", netlist);
         assert!(!netlist.contains(".lib /models"), "no .lib without corner: {}", netlist);
+    }
+
+    // ── Issue 05: Dialect correctness ──
+
+    #[test]
+    fn test_xyce_uses_print_not_save() {
+        let ir = CircuitIR {
+            top: Subcircuit {
+                name: "xyce_print".into(),
+                ports: vec![], parameters: vec![],
+                components: vec![Component::Resistor {
+                    name: "1".into(), n1: "a".into(), n2: "0".into(),
+                    value: IrValue::Numeric { value: 1000.0 }, params: vec![],
+                }],
+                instances: vec![], models: vec![], raw_spice: vec![],
+                includes: vec![], libs: vec![], osdi_loads: vec![],
+                verilog_blocks: vec![],
+            },
+            testbench: Some(Testbench {
+                dut: "xyce_print".into(), stimulus: vec![],
+                analyses: vec![Analysis::Op],
+                options: SimOptions::default(),
+                saves: vec!["V(a)".into()],
+                measures: vec![], temperature: None, nominal_temperature: None,
+                initial_conditions: vec![], node_sets: vec![],
+                step_params: vec![], extra_lines: vec![],
+            }),
+            subcircuit_defs: vec![], model_libraries: vec![],
+        };
+
+        let xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
+        let netlist = xy.emit_netlist(&ir).unwrap();
+        assert!(netlist.contains(".PRINT"), "xyce needs .PRINT: {}", netlist);
+        assert!(!netlist.contains(".save"), "xyce must not use .save: {}", netlist);
+    }
+
+    #[test]
+    fn test_ngspice_uses_save() {
+        let ir = CircuitIR {
+            top: Subcircuit {
+                name: "ng_save".into(),
+                ports: vec![], parameters: vec![],
+                components: vec![], instances: vec![], models: vec![],
+                raw_spice: vec![], includes: vec![], libs: vec![],
+                osdi_loads: vec![], verilog_blocks: vec![],
+            },
+            testbench: Some(Testbench {
+                dut: "ng_save".into(), stimulus: vec![],
+                analyses: vec![Analysis::Op],
+                options: SimOptions::default(),
+                saves: vec!["V(a)".into()],
+                measures: vec![], temperature: None, nominal_temperature: None,
+                initial_conditions: vec![], node_sets: vec![],
+                step_params: vec![], extra_lines: vec![],
+            }),
+            subcircuit_defs: vec![], model_libraries: vec![],
+        };
+
+        let ng = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+        let netlist = ng.emit_netlist(&ir).unwrap();
+        assert!(netlist.contains(".save V(a)"), "ngspice uses .save: {}", netlist);
+    }
+
+    #[test]
+    fn test_pz_disto_error_on_xyce() {
+        let cg_xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
+        let pz = Analysis::PoleZero {
+            node1: "1".into(), node2: "0".into(),
+            node3: "3".into(), node4: "0".into(),
+            tf_type: "vol".into(), pz_type: "pz".into(),
+        };
+        assert!(cg_xy.emit_analysis(&pz).is_err(), "pz should error on xyce");
+
+        let disto = Analysis::Distortion {
+            variation: "dec".into(), points: 10,
+            start: 1e3, stop: 1e6, f2overf1: None,
+        };
+        assert!(cg_xy.emit_analysis(&disto).is_err(), "disto should error on xyce");
+    }
+
+    #[test]
+    fn test_pz_disto_ok_on_ngspice() {
+        let cg_ng = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+        let pz = Analysis::PoleZero {
+            node1: "1".into(), node2: "0".into(),
+            node3: "3".into(), node4: "0".into(),
+            tf_type: "vol".into(), pz_type: "pz".into(),
+        };
+        assert!(cg_ng.emit_analysis(&pz).is_ok(), "pz should work on ngspice");
     }
 }
