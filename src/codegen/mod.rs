@@ -1,5 +1,6 @@
 pub mod spice3;
 pub mod spectre;
+pub mod vacask;
 
 use crate::ir::*;
 

@@ -74,6 +74,14 @@ impl SpectreCodeGen {
         s
     }
 
+    pub fn emit_model_pub(&self, m: &ModelDef) -> String {
+        self.emit_model(m)
+    }
+
+    pub fn emit_instance_pub(&self, inst: &Instance) -> String {
+        self.emit_instance(inst)
+    }
+
     fn emit_model(&self, m: &ModelDef) -> String {
         let mut s = format!("model {} {}", m.name, m.kind);
         if !m.parameters.is_empty() {

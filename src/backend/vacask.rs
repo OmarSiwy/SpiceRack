@@ -14,6 +14,10 @@ impl Backend for VacaskSubprocess {
         "vacask"
     }
 
+    fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {
+        Box::new(crate::codegen::vacask::VacaskCodeGen)
+    }
+
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
         let tmp_dir = TempDir::new()?;
         let sim_path = tmp_dir.path().join("circuit.sim");
@@ -742,6 +746,10 @@ impl Drop for VacaskLibrary {
 impl Backend for VacaskLibrary {
     fn name(&self) -> &str {
         "vacask-shared"
+    }
+
+    fn codegen(&self) -> Box<dyn crate::codegen::CodeGen> {
+        Box::new(crate::codegen::vacask::VacaskCodeGen)
     }
 
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {

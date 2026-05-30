@@ -9,6 +9,7 @@ use pyspice::backend::ngspice::NgspiceSubprocess;
 use pyspice::backend::xyce::XyceSubprocess;
 use pyspice::backend::ltspice::LtspiceSubprocess;
 use pyspice::backend::spectre::SpectreSubprocess;
+use pyspice::backend::vacask::VacaskSubprocess;
 use pyspice::backend::Backend;
 use pyspice::circuit::Circuit;
 use pyspice::codegen::spice3::{Spice3CodeGen, Spice3Dialect};
@@ -194,4 +195,100 @@ fn run_path_spectre_uses_spectre_codegen() {
     assert!(produced.contains("simulator lang=spectre"), "spectre lang header");
     assert!(produced.contains("op1 dc"), "spectre op analysis");
     assert!(!produced.contains(".op"), "must not contain SPICE .op");
+}
+
+// ── Issue 04: Vacask codegen ──
+
+#[test]
+fn vacask_backend_names_its_codegen() {
+    let vk = VacaskSubprocess;
+    assert_eq!(vk.codegen().backend_name(), "vacask");
+}
+
+#[test]
+fn vacask_codegen_emits_native_syntax() {
+    let ir = rc_op_ir();
+    let vk = VacaskSubprocess;
+    let netlist = vk.codegen().emit_netlist(&ir).unwrap();
+
+    // Vacask uses Spectre-like syntax
+    assert!(netlist.contains("r1 (vdd out) resistor r="), "vacask r1");
+    assert!(netlist.contains("r2 (out 0) resistor r="), "vacask r2");
+    assert!(netlist.contains("op1 dc"), "vacask op");
+
+    // No UNTRANSLATED lines
+    assert!(!netlist.contains("UNTRANSLATED"), "no UNTRANSLATED: {}", netlist);
+
+    // No SPICE syntax leaks
+    assert!(!netlist.contains(".op"), "no .op");
+    assert!(!netlist.contains(".end"), "no .end");
+}
+
+#[test]
+fn vacask_codegen_osdi_uses_load() {
+    let ir = CircuitIR {
+        top: Subcircuit {
+            name: "osdi_test".into(),
+            ports: vec![], parameters: vec![], components: vec![],
+            instances: vec![], models: vec![], raw_spice: vec![],
+            includes: vec![], libs: vec![],
+            osdi_loads: vec!["/models/bsim4.osdi".into()],
+            verilog_blocks: vec![],
+        },
+        testbench: None, subcircuit_defs: vec![],
+        model_libraries: vec![],
+    };
+
+    let vk = VacaskSubprocess;
+    let netlist = vk.codegen().emit_netlist(&ir).unwrap();
+
+    // Vacask uses `load`, not `ahdl_include` or `.pre_osdi`
+    assert!(netlist.contains("load \"/models/bsim4.osdi\""), "load: {}", netlist);
+    assert!(!netlist.contains("ahdl_include"), "no ahdl_include");
+    assert!(!netlist.contains(".pre_osdi"), "no .pre_osdi");
+}
+
+#[test]
+fn vacask_codegen_subcircuit_ends_has_name() {
+    let ir = CircuitIR {
+        top: Subcircuit {
+            name: "top".into(),
+            ports: vec![], parameters: vec![], components: vec![],
+            instances: vec![Instance {
+                name: "1".into(),
+                subcircuit: "mybuf".into(),
+                port_mapping: vec!["in".into(), "out".into()],
+                parameters: vec![],
+            }],
+            models: vec![], raw_spice: vec![],
+            includes: vec![], libs: vec![], osdi_loads: vec![],
+            verilog_blocks: vec![],
+        },
+        testbench: None,
+        subcircuit_defs: vec![Subcircuit {
+            name: "mybuf".into(),
+            ports: vec![
+                Port { name: "in".into(), direction: PortDirection::Input },
+                Port { name: "out".into(), direction: PortDirection::Output },
+            ],
+            parameters: vec![], components: vec![
+                Component::Resistor {
+                    name: "1".into(), n1: "in".into(), n2: "out".into(),
+                    value: IrValue::Numeric { value: 1000.0 }, params: vec![],
+                },
+            ],
+            instances: vec![], models: vec![], raw_spice: vec![],
+            includes: vec![], libs: vec![], osdi_loads: vec![],
+            verilog_blocks: vec![],
+        }],
+        model_libraries: vec![],
+    };
+
+    let vk = VacaskSubprocess;
+    let netlist = vk.codegen().emit_netlist(&ir).unwrap();
+
+    assert!(netlist.contains("subckt mybuf (in out)"), "subckt header: {}", netlist);
+    assert!(netlist.contains("ends mybuf"), "ends with name: {}", netlist);
+    // No broken empty `ends `
+    assert!(!netlist.contains("ends \n"), "no empty ends");
 }

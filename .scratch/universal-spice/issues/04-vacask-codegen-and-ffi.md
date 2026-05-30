@@ -1,6 +1,6 @@
 # 04 — Vacask: real codegen dialect + fix fabricated C API
 
-Status: needs-triage
+Status: done
 Priority: P1
 Theme: backend coverage
 
