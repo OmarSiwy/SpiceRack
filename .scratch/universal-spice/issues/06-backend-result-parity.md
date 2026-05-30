@@ -1,6 +1,6 @@
 # 06 — Result parity across backends (Normalized Result contract)
 
-Status: needs-triage
+Status: done
 Priority: P1
 Theme: backend coverage / results
 

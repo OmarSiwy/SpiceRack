@@ -326,4 +326,32 @@ mod tests {
         assert_eq!(normalize_var_name("v(out)", "ngspice-subprocess"), "out");
         assert_eq!(normalize_var_name("v(out)", "ngspice-shared"), "out");
     }
+
+    // ── Issue 06: Cross-backend result parity ──
+
+    #[test]
+    fn test_spectre_current_v1_p() {
+        assert!(is_current_name("V1:p", "spectre"));
+        assert_eq!(normalize_var_name("V1:p", "spectre"), "i(v1)");
+    }
+
+    #[test]
+    fn test_same_circuit_same_normalized_keys() {
+        let names_ng = vec!["time", "v(out)", "v(in)", "i(V1)"];
+        let names_xy = vec!["TIME", "V(OUT)", "V(IN)", "I(V1)"];
+        let names_sp = vec!["time", "out", "in", "V1:p"];
+
+        let norm_ng: Vec<String> = names_ng.iter()
+            .map(|n| normalize_var_name(n, "ngspice"))
+            .collect();
+        let norm_xy: Vec<String> = names_xy.iter()
+            .map(|n| normalize_var_name(n, "xyce"))
+            .collect();
+        let norm_sp: Vec<String> = names_sp.iter()
+            .map(|n| normalize_var_name(n, "spectre"))
+            .collect();
+
+        assert_eq!(norm_ng, norm_xy, "ngspice vs xyce");
+        assert_eq!(norm_ng, norm_sp, "ngspice vs spectre");
+    }
 }
