@@ -1,6 +1,6 @@
 # 07 — PySpice API compatibility + generic-API leaks
 
-Status: needs-triage
+Status: done
 Priority: P1
 Theme: Python API
 

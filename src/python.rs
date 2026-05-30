@@ -1366,6 +1366,16 @@ impl PyDcAnalysis {
     fn measures(&self) -> HashMap<String, f64> {
         measures_to_dict(&self.inner.base.measures)
     }
+
+    #[getter]
+    fn nodes(&self) -> Vec<String> {
+        self.inner.base.nodes.keys().cloned().collect()
+    }
+
+    #[getter]
+    fn branches(&self) -> Vec<String> {
+        self.inner.base.branches.keys().cloned().collect()
+    }
 }
 
 #[pyclass(name = "AcAnalysis")]
@@ -4148,6 +4158,17 @@ fn create_unit_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     add_unit!(u_uW, u::U_UW);
     // Degrees
     add_unit!(u_Degree, u::U_DEGREE);
+
+    // Unicode aliases (PySpice compat)
+    unit_mod.add("u_Ω", PyUnit { inner: u::U_OHM })?;
+    unit_mod.add("u_kΩ", PyUnit { inner: u::U_KOHM })?;
+    unit_mod.add("u_MΩ", PyUnit { inner: u::U_MOHM })?;
+    unit_mod.add("u_µF", PyUnit { inner: u::U_UF })?;
+    unit_mod.add("u_µH", PyUnit { inner: u::U_UH })?;
+    unit_mod.add("u_µA", PyUnit { inner: u::U_UA })?;
+    unit_mod.add("u_µV", PyUnit { inner: u::U_UV })?;
+    unit_mod.add("u_µW", PyUnit { inner: u::U_UW })?;
+    unit_mod.add("u_µs", PyUnit { inner: u::U_US })?;
 
     m.add_submodule(&unit_mod)?;
 
