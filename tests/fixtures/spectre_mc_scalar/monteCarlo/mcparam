@@ -1,0 +1,2 @@
+gain_db oceanEval("db20(v(\"vout\")/v(\"vin\"))")
+vref oceanEval("value(v(\"vref\") 1u)")

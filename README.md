@@ -67,7 +67,9 @@ See the [`examples/`](examples/) directory for 22 working examples covering volt
 | Spectre | Supported (needs testing if anyone can) | Cadence, native Spectre syntax codegen |
 | VacaSk | Supported | Compact model testing via OpenVAF |
 
-See [`docs/backends/`](docs/backends/) for per-backend details and the [analysis compatibility map](docs/backends/analysis-map.md).
+See the hosted documentation entry points in [`docs/users.html`](docs/users.html) and
+[`docs/developers.html`](docs/developers.html) for backend details, analysis
+coverage, user workflows, and maintainer guidance.
 
 ## Exports
 
@@ -114,7 +116,7 @@ src/
   cabi.rs         C FFI exports
 examples/         Python usage examples
 tests/            Rust + Python test suites
-docs/             mdBook documentation
+docs/             Static HTML documentation
 schema/           JSON schema for serialized IR
 ```
 

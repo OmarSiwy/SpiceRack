@@ -1689,6 +1689,14 @@ impl Circuit {
 
 // ── SPICE netlist emission ──
 
+fn format_spice_path(path: &str) -> String {
+    if path.chars().any(char::is_whitespace) {
+        format!("\"{}\"", path.replace('"', "\\\""))
+    } else {
+        path.to_string()
+    }
+}
+
 impl fmt::Display for Circuit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // OSDI loads must appear before .title in ngspice
@@ -1701,12 +1709,12 @@ impl fmt::Display for Circuit {
 
         // Includes
         for inc in &self.includes {
-            writeln!(f, ".include \"{}\"", inc)?;
+            writeln!(f, ".include {}", format_spice_path(inc))?;
         }
 
         // Libraries
         for (path, section) in &self.libs {
-            writeln!(f, ".lib \"{}\" {}", path, section)?;
+            writeln!(f, ".lib {} {}", format_spice_path(path), section)?;
         }
 
         // Options

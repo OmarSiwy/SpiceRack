@@ -135,9 +135,20 @@ fn test_includes_and_libs() {
     c.parameter("vdd_val", "3.3");
 
     let netlist = c.to_string();
-    assert!(netlist.contains(".include \"/path/to/model.lib\""));
-    assert!(netlist.contains(".lib \"/path/to/pdk.lib\" tt"));
+    assert!(netlist.contains(".include /path/to/model.lib"));
+    assert!(netlist.contains(".lib /path/to/pdk.lib tt"));
     assert!(netlist.contains(".param vdd_val=3.3"));
+}
+
+#[test]
+fn test_include_and_lib_paths_with_spaces_are_quoted() {
+    let mut c = Circuit::new("includes");
+    c.include("/path with spaces/model.lib");
+    c.lib("/path with spaces/pdk.lib", "tt");
+
+    let netlist = c.to_string();
+    assert!(netlist.contains(".include \"/path with spaces/model.lib\""));
+    assert!(netlist.contains(".lib \"/path with spaces/pdk.lib\" tt"));
 }
 
 #[test]

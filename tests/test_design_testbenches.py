@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +30,9 @@ from testbenches import (
     parse_metric_rows,
     validate_metrics,
 )
+
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def ps():
@@ -230,6 +234,69 @@ def test_monte_carlo_directory_loader_finds_backend_metric_files(tmp_path):
         backend="xyce",
     )
     assert summary.pass_rate == pytest.approx(0.5)
+
+
+def test_spectre_monte_carlo_fixture_finds_scalar_mcdata_without_waveforms():
+    output_dir = FIXTURES / "spectre_mc_scalar"
+
+    files = find_metric_files(output_dir, backend="spectre")
+
+    assert files == [output_dir / "monteCarlo" / "mcdata"]
+    assert output_dir / "psf" / "tran.tran" not in files
+    assert output_dir / "input.raw" / "tran.raw" not in files
+
+
+def test_spectre_mcdata_fixture_uses_mcparam_column_names():
+    output_dir = FIXTURES / "spectre_mc_scalar"
+
+    rows = load_monte_carlo_metrics(output_dir, backend="spectre")
+
+    assert rows == [
+        {"iteration": 1.0, "gain_db": 40.1, "vref": 1.204},
+        {"iteration": 2.0, "gain_db": 39.4, "vref": 1.211},
+        {"iteration": 3.0, "gain_db": 36.8, "vref": 1.287},
+    ]
+
+    summary = evaluate_monte_carlo_file(
+        output_dir,
+        [
+            ValidationRule("gain", "gain_db", minimum=38.0),
+            ValidationRule("reference", "vref", minimum=1.18, maximum=1.23),
+        ],
+        backend="spectre",
+    )
+    assert summary.total == 3
+    assert summary.passed == 2
+
+
+def test_spectre_default_instance_mcdata_uses_sibling_mcparam(tmp_path):
+    scalar = tmp_path / "mc1.mcdata"
+    scalar.write_text("40.1 1.204\n39.4 1.211\n")
+    (tmp_path / "mc1.mcparam").write_text(
+        "gain_db oceanEval(\"db20(v(\\\"vout\\\")/v(\\\"vin\\\"))\")\n"
+        "vref oceanEval(\"value(v(\\\"vref\\\") 1u)\")\n"
+    )
+
+    files = find_metric_files(tmp_path, backend="spectre")
+    rows = load_metric_rows(scalar, backend="spectre")
+
+    assert files == [scalar]
+    assert rows == [
+        {"iteration": 1.0, "gain_db": 40.1, "vref": 1.204},
+        {"iteration": 2.0, "gain_db": 39.4, "vref": 1.211},
+    ]
+
+
+def test_spectre_discovery_includes_named_dat_scalar_exports(tmp_path):
+    output_dir = tmp_path / "spectre_run"
+    output_dir.mkdir()
+    scalar = output_dir / "mc_results.dat"
+    scalar.write_text("gain_db vref\n40.1 1.204\n39.4 1.211\n")
+    (output_dir / "waveform.dat").write_text("large waveform data")
+
+    files = find_metric_files(output_dir, backend="spectre")
+
+    assert files == [scalar]
 
 
 def test_corner_netlists_apply_temperature_and_parameters():

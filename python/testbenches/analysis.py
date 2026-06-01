@@ -331,6 +331,112 @@ def _parse_delimited_metric_rows(text: str) -> list[dict[str, float]]:
     return _coerce_metric_rows(table_rows)
 
 
+def _parse_numeric_matrix(text: str) -> list[list[float]]:
+    rows: list[list[float]] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", "*", "//")):
+            continue
+        parts = [part for part in re.split(r"[\s,;]+", stripped) if part]
+        values = [_parse_float(part) for part in parts]
+        if not values or any(value is None for value in values):
+            return []
+        rows.append([float(value) for value in values if value is not None])
+    if not rows:
+        return []
+    width = len(rows[0])
+    if width == 0 or any(len(row) != width for row in rows):
+        return []
+    return rows
+
+
+def _spectre_mcparam_candidates(path: Path) -> list[Path]:
+    name = path.name
+    lower = name.lower()
+    candidates: list[Path] = []
+
+    def add(candidate: Path) -> None:
+        if candidate not in candidates:
+            candidates.append(candidate)
+
+    if path.suffix.lower() == ".mcdata":
+        add(path.with_suffix(".mcparam"))
+    if lower.endswith("mcdata"):
+        add(path.with_name(f"{name[:-len('mcdata')]}mcparam"))
+    if lower.endswith("data"):
+        add(path.with_name(f"{name[:-len('data')]}param"))
+        add(path.with_name(f"{name[:-len('data')]}Param"))
+    if lower == "mcdata":
+        add(path.with_name("mcparam"))
+    if lower == "processdata":
+        add(path.with_name("processParam"))
+        add(path.with_name("processparam"))
+    if lower == "mismatchdata":
+        add(path.with_name("mismatchparam"))
+        add(path.with_name("mismatchParam"))
+
+    return candidates
+
+
+def _spectre_metric_names_from_paramfile(path: Path, expected: int) -> list[str]:
+    ignored = {
+        "column",
+        "columns",
+        "expr",
+        "expression",
+        "expressions",
+        "index",
+        "run",
+        "sweep",
+        "title",
+        "titles",
+    }
+    for candidate in _spectre_mcparam_candidates(path):
+        if not candidate.exists():
+            continue
+        names: list[str] = []
+        for line in candidate.read_text().splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith(("#", "*", "//")):
+                continue
+            tokens = re.findall(r"[A-Za-z_]\w*", stripped)
+            if len(tokens) == expected and not any(token.lower() in ignored for token in tokens):
+                return tokens
+            if tokens and tokens[0].lower() not in ignored:
+                names.append(tokens[0])
+        if len(names) >= expected:
+            return names[:expected]
+    return []
+
+
+def _parse_spectre_mcdata_file(path: Path) -> list[dict[str, float]]:
+    matrix = _parse_numeric_matrix(path.read_text())
+    if not matrix:
+        return []
+
+    column_count = len(matrix[0])
+    names = _spectre_metric_names_from_paramfile(path, column_count)
+    has_iteration_column = False
+    if not names:
+        names = _spectre_metric_names_from_paramfile(path, column_count - 1)
+        has_iteration_column = bool(names)
+    if not names:
+        names = [f"value_{index + 1}" for index in range(column_count)]
+
+    rows: list[dict[str, float]] = []
+    for index, values in enumerate(matrix, start=1):
+        row: dict[str, float] = {}
+        metric_values = values
+        if has_iteration_column:
+            row["iteration"] = values[0]
+            metric_values = values[1:]
+        elif "iteration" not in {name.lower() for name in names}:
+            row["iteration"] = float(index)
+        row.update(dict(zip(names, metric_values)))
+        rows.append(row)
+    return rows
+
+
 def _parse_measure_blocks(text: str) -> list[dict[str, float]]:
     rows: list[dict[str, float]] = []
     current: dict[str, float] = {}
@@ -369,7 +475,29 @@ def parse_metric_rows(text: str, backend: str = "auto") -> list[dict[str, float]
 
 
 def load_metric_rows(path: str | Path, backend: str = "auto") -> list[dict[str, float]]:
-    return parse_metric_rows(Path(path).read_text(), backend)
+    metric_path = Path(path)
+    if backend.lower() == "spectre" and _is_spectre_mcdata_file(metric_path):
+        rows = _parse_spectre_mcdata_file(metric_path)
+        if rows:
+            return rows
+    return parse_metric_rows(metric_path.read_text(), backend)
+
+
+def _is_spectre_mcdata_file(path: Path) -> bool:
+    name = path.name.lower()
+    return name in {"mcdata", "processdata", "mismatchdata"} or name.endswith(".mcdata")
+
+
+def _is_spectre_metric_file(path: Path) -> bool:
+    if _is_spectre_mcdata_file(path):
+        return True
+    suffix = path.suffix.lower()
+    if suffix in {".measure", ".measurement"}:
+        return True
+    if suffix == ".dat":
+        stem = path.stem.lower()
+        return any(token in stem for token in ("mc", "measure", "metric", "result", "scalar"))
+    return False
 
 
 def find_metric_files(path: str | Path, backend: str = "auto") -> list[Path]:
@@ -382,12 +510,16 @@ def find_metric_files(path: str | Path, backend: str = "auto") -> list[Path]:
     if backend_lower.startswith("xyce"):
         suffixes |= {".prn", ".res"}
     if backend_lower == "spectre":
-        suffixes |= {".measure", ".measurement"}
+        suffixes |= {".measure", ".measurement", ".mcdata"}
 
     files = [
         candidate
         for candidate in sorted(root.rglob("*"))
-        if candidate.is_file() and candidate.suffix.lower() in suffixes
+        if candidate.is_file()
+        and (
+            candidate.suffix.lower() in suffixes
+            or (backend_lower == "spectre" and _is_spectre_metric_file(candidate))
+        )
     ]
     return files
 

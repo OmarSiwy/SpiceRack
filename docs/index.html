@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeSpice Documentation</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a class="brand" href="index.html">DeSpice <span>pyspice-rs</span></a>
+      <div class="nav-links">
+        <a href="users.html">User docs</a>
+        <a href="developers.html">Developer docs</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Rust-powered SPICE automation for Python users and systems developers.</h1>
+      <p>DeSpice, packaged as <code>pyspice-rs</code>, builds circuits in Python, emits backend-specific netlists through a Rust intermediate representation, runs SPICE simulators, parses results, and provides reusable analog and mixed-signal design testbenches.</p>
+      <div class="hero-actions">
+        <a class="button" href="users.html">Read user docs</a>
+        <a class="button secondary" href="developers.html">Read developer docs</a>
+      </div>
+    </section>
+
+    <section class="hero" aria-labelledby="audiences">
+      <h2 id="audiences">Choose Your Path</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>Users</h3>
+          <p>Install the package, build circuits, run operating point, DC, AC, transient, RF, and statistical analyses, use units, lint netlists, and apply reusable design testbenches.</p>
+          <a href="users.html">Open the user guide</a>
+        </article>
+        <article class="card">
+          <h3>Developers</h3>
+          <p>Understand the Rust/Python architecture, backend selection, code generation pipeline, result parsing, test layout, C ABI, schema, and release workflow.</p>
+          <a href="developers.html">Open the developer guide</a>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    Static documentation hosted from <code>docs/</code> by GitHub Pages.
+  </footer>
+</body>
+</html>
