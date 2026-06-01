@@ -74,6 +74,53 @@ impl SpectreCodeGen {
         s
     }
 
+    fn emit_sweep_header(&self, idx: usize, sp: &StepParam) -> String {
+        let suffix: String = sp.param.chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
+            .collect();
+        let sweep = match sp.sweep_type.as_deref() {
+            Some("dec") | Some("DEC") => format!("dec={}", format_spice_number(sp.step)),
+            Some("oct") | Some("OCT") => format!("oct={}", format_spice_number(sp.step)),
+            Some("lin") | Some("LIN") | None => format!("step={}", format_spice_number(sp.step)),
+            Some(other) => format!("{}={}", other.to_ascii_lowercase(), format_spice_number(sp.step)),
+        };
+        format!(
+            "sweep{}_{} sweep param={} start={} stop={} {} {{",
+            idx + 1,
+            suffix,
+            sp.param,
+            format_spice_number(sp.start),
+            format_spice_number(sp.stop),
+            sweep,
+        )
+    }
+
+    fn emit_analysis_block(&self, analyses: &[Analysis], step_params: &[StepParam]) -> Result<Vec<String>, CodeGenError> {
+        let mut block = Vec::new();
+        for analysis in analyses {
+            block.push(self.emit_analysis(analysis)?);
+        }
+
+        for (idx, sp) in step_params.iter().enumerate().rev() {
+            let mut wrapped = Vec::new();
+            wrapped.push(self.emit_sweep_header(idx, sp));
+            for line in block {
+                wrapped.push(format!("  {}", line.replace('\n', "\n  ")));
+            }
+            wrapped.push("}".into());
+            block = wrapped;
+        }
+
+        Ok(block)
+    }
+
+    fn emit_measure(&self, meas: &str) -> String {
+        meas.strip_prefix(".meas ")
+            .or_else(|| meas.strip_prefix(".measure "))
+            .unwrap_or(meas)
+            .to_string()
+    }
+
     pub fn emit_model_pub(&self, m: &ModelDef) -> String {
         self.emit_model(m)
     }
@@ -255,6 +302,9 @@ impl CodeGen for SpectreCodeGen {
             if let Some(temp) = tb.temperature {
                 lines.push(format!("mytemp options temp={}", temp));
             }
+            if let Some(tnom) = tb.nominal_temperature {
+                lines.push(format!("mytnom options tnom={}", tnom));
+            }
 
             // Initial conditions
             for (node, val) in &tb.initial_conditions {
@@ -271,6 +321,11 @@ impl CodeGen for SpectreCodeGen {
                 lines.push(format!("save {}", save));
             }
 
+            // Measures
+            for meas in &tb.measures {
+                lines.push(self.emit_measure(meas));
+            }
+
             // Extra lines
             for line in &tb.extra_lines {
                 lines.push(line.clone());
@@ -278,10 +333,8 @@ impl CodeGen for SpectreCodeGen {
 
             lines.push(String::new());
 
-            // Analyses
-            for analysis in &tb.analyses {
-                lines.push(self.emit_analysis(analysis)?);
-            }
+            // Analyses, optionally wrapped in Spectre parameter sweeps.
+            lines.extend(self.emit_analysis_block(&tb.analyses, &tb.step_params)?);
         }
 
         Ok(lines.join("\n"))
@@ -873,6 +926,41 @@ mod tests {
         assert!(s.contains("myopts options"), "opts header: {}", s);
         assert!(s.contains("reltol=1e-3"), "reltol: {}", s);
         assert!(s.contains("maxiters=200"), "maxiters: {}", s);
+    }
+
+    #[test]
+    fn test_spectre_testbench_measures_temperature_and_steps() {
+        let mut ir = sample_resistor_divider();
+        let tb = ir.testbench.as_mut().unwrap();
+        tb.temperature = Some(85.0);
+        tb.nominal_temperature = Some(27.0);
+        tb.measures.push(".meas tran vmax max V(output)".into());
+        tb.step_params.push(StepParam {
+            param: "rload".into(),
+            start: 1e3,
+            stop: 10e3,
+            step: 1e3,
+            sweep_type: None,
+        });
+        tb.analyses = vec![
+            Analysis::Transient {
+                step: 1e-9,
+                stop: 1e-6,
+                start: None,
+                max_step: None,
+                uic: false,
+            },
+            Analysis::Op,
+        ];
+
+        let cg = SpectreCodeGen;
+        let netlist = cg.emit_netlist(&ir).unwrap();
+        assert!(netlist.contains("mytemp options temp=85"), "temp: {}", netlist);
+        assert!(netlist.contains("mytnom options tnom=27"), "tnom: {}", netlist);
+        assert!(netlist.contains("tran vmax max V(output)"), "measure: {}", netlist);
+        assert!(netlist.contains("sweep1_rload sweep param=rload start=1k stop=10k step=1k {"), "sweep: {}", netlist);
+        assert!(netlist.contains("  tran1 tran"), "wrapped tran: {}", netlist);
+        assert!(netlist.contains("  op1 dc"), "wrapped op: {}", netlist);
     }
 
     #[test]

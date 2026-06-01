@@ -164,6 +164,14 @@ impl Spice3CodeGen {
             }
         }
     }
+
+    fn emit_measure(&self, meas: &str) -> String {
+        if meas.starts_with(".meas") || meas.starts_with(".measure") {
+            meas.to_string()
+        } else {
+            format!(".meas {}", meas)
+        }
+    }
 }
 
 impl CodeGen for Spice3CodeGen {
@@ -266,6 +274,9 @@ impl CodeGen for Spice3CodeGen {
             if let Some(temp) = tb.temperature {
                 lines.push(format!(".temp {}", temp));
             }
+            if let Some(tnom) = tb.nominal_temperature {
+                lines.push(format!(".options tnom={}", tnom));
+            }
 
             // Initial conditions
             for (node, val) in &tb.initial_conditions {
@@ -287,7 +298,7 @@ impl CodeGen for Spice3CodeGen {
 
             // Measures
             for meas in &tb.measures {
-                lines.push(meas.clone());
+                lines.push(self.emit_measure(meas));
             }
 
             // Step params
@@ -1233,6 +1244,19 @@ mod tests {
         let cg = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
         let netlist = cg.emit_netlist(&ir).unwrap();
         assert!(netlist.contains(".step param rval 1000 10000 1000"), "step: {}", netlist);
+    }
+
+    #[test]
+    fn test_spice3_testbench_measure_and_nominal_temperature() {
+        let mut ir = sample_resistor_divider();
+        let tb = ir.testbench.as_mut().unwrap();
+        tb.nominal_temperature = Some(27.0);
+        tb.measures.push("tran vmax MAX V(output)".into());
+
+        let cg = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+        let netlist = cg.emit_netlist(&ir).unwrap();
+        assert!(netlist.contains(".options tnom=27"), "tnom: {}", netlist);
+        assert!(netlist.contains(".meas tran vmax MAX V(output)"), "measure: {}", netlist);
     }
 
     #[test]

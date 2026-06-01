@@ -26,7 +26,12 @@ f_3db = 1.0 / (2 * math.pi * 1e3 * 1e-6)  # ~159.15 Hz
 try:
     ac = tb_ac.ac(variation="dec", number_of_points=100, start_frequency=1.0, stop_frequency=1e6)
     freqs = ac.frequency
-    vout_mag = [abs(complex(r, i)) for r, i in zip(ac["vout"], ac.get("vout_imag", [0]*len(ac["vout"])))]
+    vout = ac["vout"]
+    try:
+        vout_imag = ac["vout_imag"]
+    except (AttributeError, KeyError):
+        vout_imag = [0] * len(vout)
+    vout_mag = [abs(complex(r, i)) for r, i in zip(vout, vout_imag)]
 
     print(f"f_3dB expected = {f_3db:.1f} Hz")
     print(f"DC gain = {vout_mag[0]:.4f}")

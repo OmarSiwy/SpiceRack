@@ -745,6 +745,61 @@ class TestTestbenchCreation:
         assert len(stim) == 1
         assert stim[0]["waveform"]["type"] == "Sin"
 
+    def test_current_waveform_sources(self):
+        ps = import_pyspice()
+        dut = ps.Subcircuit("current_tb", ["in", "out"])
+        tb = ps.Testbench(dut)
+        tb.PulseCurrentSource(
+            name="q",
+            positive="in",
+            negative="0",
+            pulsed_value=1e-6,
+            pulse_width=1e-9,
+        )
+        data = json.loads(tb.to_json())
+        stim = data["testbench"]["stimulus"]
+        assert stim[0]["type"] == "CurrentSource"
+        assert stim[0]["waveform"]["type"] == "Pulse"
+
+    def test_add_multi_analysis_and_netlist(self):
+        ps = import_pyspice()
+        dut = ps.Subcircuit("multi", ["in", "out"])
+        dut.R(name="1", positive="in", negative="out", value=1000.0)
+        tb = ps.Testbench(dut)
+        tb.V(name="in", positive="in", negative="0", value=1.0, ac=1.0)
+        tb.add_operating_point()
+        tb.add_ac(variation="dec", number_of_points=10, start_frequency=1.0, stop_frequency=1e6)
+        tb.measure("tran", "vmax", "MAX", "V(out)")
+
+        data = json.loads(tb.to_json())
+        assert [a["type"] for a in data["testbench"]["analyses"]] == ["Op", "Ac"]
+        netlist = tb.netlist("ngspice")
+        assert ".op" in netlist
+        assert ".ac dec 10 1 1meg" in netlist
+        assert ".meas tran vmax MAX V(out)" in netlist
+
+    def test_testbench_statistical_analysis_builders(self):
+        ps = import_pyspice()
+        dut = ps.Subcircuit("amp_mc", ["vin", "vout"])
+        tb = ps.Testbench(dut)
+        tb.add_xyce_sampling(25, {"Rload": "normal(1000,50)"})
+
+        data = json.loads(tb.to_json())
+        assert data["testbench"]["analyses"][0]["type"] == "XyceSampling"
+        xyce = tb.netlist("xyce")
+        assert ".SAMPLING" in xyce
+        assert "+ Rload=normal(1000,50)" in xyce
+
+        tb2 = ps.Testbench(dut)
+        tb2.add_xyce_pce(10, {"Cload": "uniform(0.9p,1.1p)"}, order=3)
+        assert ".PCE" in tb2.netlist("xyce")
+
+        tb3 = ps.Testbench(dut)
+        tb3.add_spectre_monte_carlo(20, "tran1", "tran", seed=42)
+        spectre = tb3.netlist("spectre")
+        assert "mc1 montecarlo numruns=20" in spectre
+        assert "seed=42" in spectre
+
 
 class TestTestbenchCheckBackend:
     def test_check_backend_clean(self):

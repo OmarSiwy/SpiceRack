@@ -11,6 +11,7 @@
 - [Models & Subcircuits](api/models.md)
 - [Simulation](api/simulation.md)
 - [Results](api/results.md)
+- [Reusable Testbenches](api/testbenches.md)
 - [Linting](api/linting.md)
 - [Backends Overview](api/backends.md)
 

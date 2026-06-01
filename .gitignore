@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+python/pyspice_rs/_native*.so
 dist/
 build/
 .venv/

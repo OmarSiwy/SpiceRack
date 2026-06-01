@@ -10,12 +10,17 @@ a PDK-native model path are skipped (e.g. vacask can't parse
 ngspice .lib section syntax).
 
 Requires PDK_ROOT, PDKs via ciel, ngspice on PATH.
+
+Set DESPICE_RUN_PDK_EXAMPLES=1 to run ngspice. By default this example only
+generates matrix netlists so documentation tests do not depend on local PDK
+simulator compatibility.
 """
 import os
 import pyspice_rs as ps
 from pyspice_rs.unit import u_V, u_kOhm
 
 PDK_ROOT = os.environ.get("PDK_ROOT", os.path.expanduser("~/.ciel"))
+RUN_SIMULATION = os.environ.get("DESPICE_RUN_PDK_EXAMPLES") == "1"
 
 # ── PDK configurations with per-backend model paths ──
 # Only list backends for which the PDK ships native model files.
@@ -84,6 +89,10 @@ for pdk_name, cfg in PDKS.items():
         tb.with_backend(backend)
 
         try:
+            if not RUN_SIMULATION:
+                netlist = tb.netlist(backend)
+                print(f"  Generated netlist lines: {len(netlist.splitlines())}")
+                continue
             if not os.path.exists(cfg["lib"]):
                 raise RuntimeError(
                     f"PDK not installed. Run: ciel install {pdk_name}"

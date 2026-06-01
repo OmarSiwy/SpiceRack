@@ -55,7 +55,7 @@ result = sim.operating_point()
 print(result["output"])  # ~3.333V
 ```
 
-See the [`examples/`](examples/) directory for 18 working examples covering voltage dividers, filters, BJT/MOSFET amplifiers, op-amps, subcircuits, Verilog-A, and digital co-simulation.
+See the [`examples/`](examples/) directory for 22 working examples covering voltage dividers, filters, BJT/MOSFET amplifiers, op-amps, subcircuits, Verilog-A, digital co-simulation, backend/PDK hotswapping, and reusable design testbenches.
 
 ## Backends
 

@@ -12,7 +12,8 @@ dependencies = ["numpy"]
 [tool.maturin]
 manifest-path = "Cargo.toml"
 features = ["python"]
-module-name = "pyspice_rs"
+module-name = "pyspice_rs._native"
+python-source = "python"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

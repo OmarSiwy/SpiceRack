@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyKeyError, PyAttributeError};
 
+use crate::codegen::CodeGen;
 use crate::circuit::{self as cir, ComponentValue, Param};
 use crate::unit as u;
 
@@ -1268,6 +1269,36 @@ fn extract_dc_sweeps(dict: &Bound<'_, pyo3::types::PyDict>) -> PyResult<Vec<(Str
         ));
     }
     Ok(sweeps)
+}
+
+fn emit_ir_netlist(ir: &crate::ir::CircuitIR, backend: &str) -> PyResult<String> {
+    let emitted = match backend.to_ascii_lowercase().as_str() {
+        "ngspice" | "ngspice-subprocess" | "ngspice-shared" => {
+            crate::codegen::spice3::Spice3CodeGen {
+                dialect: crate::codegen::spice3::Spice3Dialect::Ngspice,
+            }.emit_netlist(ir)
+        }
+        "xyce" | "xyce-serial" | "xyce-parallel" => {
+            crate::codegen::spice3::Spice3CodeGen {
+                dialect: crate::codegen::spice3::Spice3Dialect::Xyce,
+            }.emit_netlist(ir)
+        }
+        "ltspice" => {
+            crate::codegen::spice3::Spice3CodeGen {
+                dialect: crate::codegen::spice3::Spice3Dialect::Ltspice,
+            }.emit_netlist(ir)
+        }
+        "spectre" => crate::codegen::spectre::SpectreCodeGen.emit_netlist(ir),
+        "vacask" => crate::codegen::vacask::VacaskCodeGen.emit_netlist(ir),
+        _ => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "unknown backend '{}'",
+                backend
+            )));
+        }
+    };
+
+    emitted.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
 }
 
 // ── Result bindings ──
@@ -3642,6 +3673,60 @@ impl PyTestbench {
         });
     }
 
+    #[pyo3(signature = (*, name, positive, negative, dc_offset=0.0, offset=0.0, amplitude=1.0, frequency=1000.0, ac=None, ac_phase=None))]
+    fn SinusoidalCurrentSource(
+        &mut self, name: &str, positive: &str, negative: &str,
+        dc_offset: f64, offset: f64, amplitude: f64, frequency: f64,
+        ac: Option<f64>, ac_phase: Option<f64>,
+    ) {
+        self.inner.stimulus.push(crate::ir::Component::CurrentSource {
+            name: name.to_string(),
+            np: positive.to_string(),
+            nm: negative.to_string(),
+            value: crate::ir::IrValue::Numeric { value: dc_offset },
+            ac_magnitude: ac,
+            ac_phase,
+            waveform: Some(crate::ir::IrWaveform::Sin {
+                offset, amplitude, frequency, delay: 0.0, damping: 0.0, phase: 0.0,
+            }),
+        });
+    }
+
+    #[pyo3(signature = (*, name, positive, negative, initial_value=0.0, pulsed_value=1.0, pulse_width=50e-9, period=100e-9, rise_time=1e-9, fall_time=1e-9))]
+    fn PulseCurrentSource(
+        &mut self, name: &str, positive: &str, negative: &str,
+        initial_value: f64, pulsed_value: f64, pulse_width: f64,
+        period: f64, rise_time: f64, fall_time: f64,
+    ) {
+        self.inner.stimulus.push(crate::ir::Component::CurrentSource {
+            name: name.to_string(),
+            np: positive.to_string(),
+            nm: negative.to_string(),
+            value: crate::ir::IrValue::Numeric { value: 0.0 },
+            ac_magnitude: None,
+            ac_phase: None,
+            waveform: Some(crate::ir::IrWaveform::Pulse {
+                initial: initial_value, pulsed: pulsed_value, delay: 0.0,
+                rise_time, fall_time, pulse_width, period,
+            }),
+        });
+    }
+
+    #[pyo3(signature = (*, name, positive, negative, values))]
+    fn PieceWiseLinearCurrentSource(
+        &mut self, name: &str, positive: &str, negative: &str, values: Vec<(f64, f64)>,
+    ) {
+        self.inner.stimulus.push(crate::ir::Component::CurrentSource {
+            name: name.to_string(),
+            np: positive.to_string(),
+            nm: negative.to_string(),
+            value: crate::ir::IrValue::Numeric { value: 0.0 },
+            ac_magnitude: None,
+            ac_phase: None,
+            waveform: Some(crate::ir::IrWaveform::Pwl { values }),
+        });
+    }
+
     #[pyo3(signature = (*, name, positive, negative, value))]
     fn R(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg) {
         self.inner.stimulus.push(crate::ir::Component::Resistor {
@@ -3747,6 +3832,134 @@ impl PyTestbench {
             step,
             sweep_type: Some(sweep_type.to_string()),
         });
+    }
+
+    fn extra_line(&mut self, line: &str) {
+        self.inner.extra_lines.push(line.to_string());
+    }
+
+    // ── Analysis builders for multi-analysis testbenches ──
+
+    fn add_operating_point(&mut self) {
+        self.inner.analyses.push(crate::ir::Analysis::Op);
+    }
+
+    #[pyo3(signature = (**kwargs))]
+    fn add_dc(&mut self, kwargs: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
+        let dict = kwargs.ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err("add_dc() requires sweep parameters")
+        })?;
+        let sweeps = extract_dc_sweeps(&dict)?;
+        self.inner.analyses.push(crate::ir::Analysis::Dc {
+            sweeps: sweeps.iter().map(|(source, start, stop, step)| crate::ir::DcSweep {
+                source: source.clone(),
+                start: *start,
+                stop: *stop,
+                step: *step,
+            }).collect(),
+        });
+        Ok(())
+    }
+
+    #[pyo3(signature = (variation="dec", number_of_points=10, start_frequency=1.0, stop_frequency=1e9))]
+    fn add_ac(&mut self, variation: &str, number_of_points: u32, start_frequency: f64, stop_frequency: f64) {
+        self.inner.analyses.push(crate::ir::Analysis::Ac {
+            variation: variation.to_string(),
+            points: number_of_points,
+            start: start_frequency,
+            stop: stop_frequency,
+        });
+    }
+
+    #[pyo3(signature = (step_time, end_time, start_time=None, max_time=None, use_initial_condition=false))]
+    fn add_transient(&mut self, step_time: f64, end_time: f64, start_time: Option<f64>, max_time: Option<f64>, use_initial_condition: bool) {
+        self.inner.analyses.push(crate::ir::Analysis::Transient {
+            step: step_time,
+            stop: end_time,
+            start: start_time,
+            max_step: max_time,
+            uic: use_initial_condition,
+        });
+    }
+
+    #[pyo3(signature = (output_node, ref_node, src, variation="dec", points=10, start_frequency=1e3, stop_frequency=1e8, points_per_summary=None))]
+    fn add_noise(
+        &mut self, output_node: &str, ref_node: &str, src: &str,
+        variation: &str, points: u32,
+        start_frequency: f64, stop_frequency: f64,
+        points_per_summary: Option<u32>,
+    ) {
+        self.inner.analyses.push(crate::ir::Analysis::Noise {
+            output: output_node.to_string(),
+            reference: ref_node.to_string(),
+            source: src.to_string(),
+            variation: variation.to_string(),
+            points,
+            start: start_frequency,
+            stop: stop_frequency,
+            points_per_summary,
+        });
+    }
+
+    #[pyo3(signature = (fundamental_frequency, outputs, num_harmonics=None))]
+    fn add_fourier(&mut self, fundamental_frequency: f64, outputs: Vec<String>, num_harmonics: Option<u32>) {
+        self.inner.analyses.push(crate::ir::Analysis::Fourier {
+            fundamental: fundamental_frequency,
+            outputs,
+            num_harmonics,
+        });
+    }
+
+    #[pyo3(signature = (num_samples, distributions))]
+    fn add_xyce_sampling(&mut self, num_samples: u32, distributions: HashMap<String, String>) {
+        self.inner.analyses.push(crate::ir::Analysis::XyceSampling {
+            num_samples,
+            distributions: distributions.into_iter().collect(),
+        });
+    }
+
+    #[pyo3(signature = (num_samples, distributions))]
+    fn add_xyce_embedded_sampling(&mut self, num_samples: u32, distributions: HashMap<String, String>) {
+        self.inner.analyses.push(crate::ir::Analysis::XyceEmbeddedSampling {
+            num_samples,
+            distributions: distributions.into_iter().collect(),
+        });
+    }
+
+    #[pyo3(signature = (num_samples, distributions, order=2))]
+    fn add_xyce_pce(&mut self, num_samples: u32, distributions: HashMap<String, String>, order: u32) {
+        self.inner.analyses.push(crate::ir::Analysis::XycePce {
+            num_samples,
+            distributions: distributions.into_iter().collect(),
+            order,
+        });
+    }
+
+    #[pyo3(signature = (param, start, stop, step, inner_analysis, inner_type))]
+    fn add_spectre_sweep(&mut self, param: &str, start: f64, stop: f64, step: f64, inner_analysis: &str, inner_type: &str) {
+        self.inner.analyses.push(crate::ir::Analysis::SpectreSweep {
+            param: param.to_string(),
+            start,
+            stop,
+            step,
+            inner: inner_analysis.to_string(),
+            inner_type: inner_type.to_string(),
+        });
+    }
+
+    #[pyo3(signature = (num_iterations, inner_analysis, inner_type, seed=None))]
+    fn add_spectre_monte_carlo(&mut self, num_iterations: u32, inner_analysis: &str, inner_type: &str, seed: Option<u64>) {
+        self.inner.analyses.push(crate::ir::Analysis::SpectreMonteCarlo {
+            iterations: num_iterations,
+            inner: inner_analysis.to_string(),
+            inner_type: inner_type.to_string(),
+            seed,
+        });
+    }
+
+    #[pyo3(signature = (num_iterations, inner_analysis, inner_type, seed=None))]
+    fn add_spectre_montecarlo(&mut self, num_iterations: u32, inner_analysis: &str, inner_type: &str, seed: Option<u64>) {
+        self.add_spectre_monte_carlo(num_iterations, inner_analysis, inner_type, seed);
     }
 
     // ── Backend check ──
@@ -4019,6 +4232,11 @@ impl PyTestbench {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    #[pyo3(signature = (backend="ngspice"))]
+    fn netlist(&self, backend: &str) -> PyResult<String> {
+        emit_ir_netlist(&self.build_ir(), backend)
+    }
+
     fn __str__(&self) -> String {
         format!("Testbench(dut='{}', analyses={})", self.dut.name, self.inner.analyses.len())
     }
@@ -4207,7 +4425,7 @@ fn create_unit_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule]
+#[pymodule(name = "_native")]
 pub fn pyspice_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCircuit>()?;
     m.add_class::<PyUnit>()?;
