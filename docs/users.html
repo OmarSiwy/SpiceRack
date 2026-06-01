@@ -3,217 +3,152 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DeSpice User Documentation</title>
+  <title>DeSpice User Guide</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="site-header">
     <nav class="nav" aria-label="Primary">
-      <a class="brand" href="index.html">DeSpice <span>user docs</span></a>
+      <a class="brand" href="index.html">DeSpice</a>
       <div class="nav-links">
-        <a href="users.html" aria-current="page">User docs</a>
-        <a href="developers.html">Developer docs</a>
+        <a href="users.html" aria-current="page">User guide</a>
+        <a href="developers.html">Developer notes</a>
       </div>
     </nav>
   </header>
 
-  <section class="hero">
-    <h1>User Guide</h1>
-    <p>Use DeSpice from Python to describe circuits, produce SPICE netlists, select simulator backends, run analyses, read waveforms and measurements, lint designs, and reuse ready-made analog and mixed-signal testbenches.</p>
-  </section>
-
   <div class="layout">
     <aside class="toc" aria-label="Table of contents">
-      <strong>Contents</strong>
-      <a href="#what-it-is">What It Is</a>
+      <strong>User Guide</strong>
+      <a href="#what-it-is">What it is</a>
       <a href="#install">Install</a>
-      <a href="#quickstart">Quickstart</a>
-      <a href="#mental-model">Mental Model</a>
-      <a href="#circuit-api">Circuit API</a>
-      <a href="#sources">Sources And Waveforms</a>
-      <a href="#models">Models And Subcircuits</a>
-      <a href="#simulation">Simulation</a>
+      <a href="#first-circuit">First circuit</a>
+      <a href="#netlists">Netlists</a>
+      <a href="#simulate">Simulate</a>
       <a href="#results">Results</a>
+      <a href="#units">Units</a>
+      <a href="#building-blocks">Building blocks</a>
+      <a href="#models">Models</a>
       <a href="#backends">Backends</a>
       <a href="#linting">Linting</a>
-      <a href="#testbenches">Reusable Testbenches</a>
-      <a href="#examples">Examples</a>
-      <a href="#troubleshooting">Troubleshooting</a>
+      <a href="#testbenches">Testbenches</a>
+      <a href="#next">Next</a>
     </aside>
 
     <main>
-      <section id="what-it-is">
-        <h2>What It Is</h2>
-        <p>DeSpice is a Rust-powered Python package named <code>pyspice-rs</code>. It gives Python users a circuit-building API that emits SPICE netlists and can run simulator backends such as ngspice, Xyce, LTspice, Spectre, and VacaSk.</p>
-        <p>The package is useful when you want Python to be the source of truth for analog or mixed-signal experiments: generate circuits, configure analyses, lint before running, switch backends, parse results into Python objects, and create repeatable validation flows.</p>
-        <div class="grid">
-          <article class="card">
-            <h3>Primary features</h3>
-            <ul>
-              <li>Python API for resistors, capacitors, inductors, sources, semiconductors, switches, transmission lines, XSPICE elements, Verilog-A, Verilog blocks, and raw SPICE.</li>
-              <li>Unit helpers using Python's <code>@</code> operator, for example <code>10 @ u_V</code> and <code>2 @ u_kOhm</code>.</li>
-              <li>Operating point, DC, AC, transient, noise, transfer function, sensitivity, pole-zero, distortion, Fourier, RF, S-parameter, harmonic balance, and statistical analysis entry points.</li>
-              <li>Backend detection and feature-aware routing.</li>
-              <li>Reusable design testbench recipes for amplifiers, converters, switches, PLLs, sample-and-hold blocks, and bandgap references.</li>
-            </ul>
-          </article>
-          <article class="card">
-            <h3>Outputs</h3>
-            <ul>
-              <li>Human-readable netlists via <code>str(circuit)</code> or <code>testbench.netlist("ngspice")</code>.</li>
-              <li>Simulation result objects with node lookup, branch lookup, sweep axes, frequency axes, time axes, and parsed <code>.meas</code> values.</li>
-              <li>JSON-serializable intermediate representation for structured circuit and testbench storage.</li>
-              <li>C ABI build mode for non-Python consumers.</li>
-            </ul>
-          </article>
-        </div>
+      <section class="intro" id="what-it-is">
+        <h1>User Guide</h1>
+        <p>Use <code>pyspice_rs</code> when you want Python code to create SPICE circuits, generate netlists, run a simulator, and inspect numeric results.</p>
+        <p>The usual workflow is: install, build a circuit, print the netlist, run an analysis, then read nodes or waveforms from the result object.</p>
       </section>
 
       <section id="install">
-        <h2>Install</h2>
-        <p>The project is built with Rust, PyO3, maturin, and Python 3.10 or newer. You also need at least one simulator backend installed if you want to run simulations instead of only generating netlists.</p>
-        <h3>Recommended development shell</h3>
-        <pre><code class="language-bash">nix develop
-python3 -m venv .venv
-source .venv/bin/activate
-pip install maturin numpy pytest
-maturin develop</code></pre>
-        <h3>Manual setup</h3>
+        <h2>1. Install</h2>
+        <p>For local development, build the Python extension with maturin. Install at least one simulator if you want to run analyses; <code>ngspice</code> is the simplest starting point.</p>
         <pre><code class="language-bash">python3 -m venv .venv
 source .venv/bin/activate
 pip install maturin numpy pytest
 maturin develop</code></pre>
-        <p>Install one or more simulators separately. For the simplest path, install <code>ngspice</code> and make sure the <code>ngspice</code> executable is on <code>PATH</code>.</p>
-        <h3>Verify import</h3>
+        <p>If you use the Nix shell, enter it first:</p>
+        <pre><code class="language-bash">nix develop</code></pre>
+        <p>Check that Python can import the package:</p>
         <pre><code class="language-python">import pyspice_rs as ps
 print(ps.Circuit("ready"))</code></pre>
       </section>
 
-      <section id="quickstart">
-        <h2>Quickstart</h2>
-        <p>This voltage divider shows the standard workflow: create a circuit, add parts, print the netlist, create a simulator, run an analysis, and read a node voltage.</p>
-        <pre><code class="language-python">from pyspice_rs import Circuit
+      <section id="first-circuit">
+        <h2>2. Build a First Circuit</h2>
+        <p>A circuit is a SPICE deck built from Python calls. Nodes are strings. Ground is always <code>circuit.gnd</code>, which is node <code>"0"</code>.</p>
+        <pre><code class="language-python">import pyspice_rs as ps
 from pyspice_rs.unit import u_V, u_kOhm
 
-circuit = Circuit("Voltage Divider")
-circuit.V(name="in", positive="input", negative=circuit.gnd, value=10 @ u_V)
-circuit.R(name="1", positive="input", negative="output", value=2 @ u_kOhm)
-circuit.R(name="2", positive="output", negative=circuit.gnd, value=1 @ u_kOhm)
+circuit = ps.Circuit("voltage_divider")
+circuit.V(name="in", positive="vin", negative=circuit.gnd, value=10 @ u_V)
+circuit.R(name="top", positive="vin", negative="vout", value=2 @ u_kOhm)
+circuit.R(name="bot", positive="vout", negative=circuit.gnd, value=1 @ u_kOhm)</code></pre>
+      </section>
 
-print(str(circuit))
-
-sim = circuit.simulator(simulator="ngspice")
-op = sim.operating_point()
-print(f"V(output) = {op['output']:.3f} V")</code></pre>
-        <p>The emitted netlist is ordinary SPICE:</p>
-        <pre><code>.title Voltage Divider
-Vin input 0 10
-R1 input output 2k
-R2 output 0 1k
+      <section id="netlists">
+        <h2>3. Print the Netlist</h2>
+        <p><code>str(circuit)</code> returns ordinary SPICE text. This is useful for debugging and for workflows where another tool runs the netlist.</p>
+        <pre><code class="language-python">print(circuit)</code></pre>
+        <pre><code>.title voltage_divider
+Vin vin 0 10
+Rtop vin vout 2k
+Rbot vout 0 1k
 .end</code></pre>
       </section>
 
-      <section id="mental-model">
-        <h2>Mental Model</h2>
+      <section id="simulate">
+        <h2>4. Run a Simulation</h2>
+        <p>Create a simulator from the circuit. Pass a backend name to force one, or omit it to auto-select from installed backends.</p>
+        <pre><code class="language-python">sim = circuit.simulator(simulator="ngspice")
+op = sim.operating_point()
+print(op["vout"])</code></pre>
+        <p>Common analyses:</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Concept</th><th>Meaning</th><th>How you use it</th></tr></thead>
+            <thead><tr><th>Goal</th><th>Call</th></tr></thead>
             <tbody>
-              <tr><td>Circuit</td><td>A top-level SPICE deck built from Python calls.</td><td><code>circuit = Circuit("name")</code>, then add parts.</td></tr>
-              <tr><td>Node</td><td>An electrical connection point.</td><td>Use strings like <code>"vin"</code>, <code>"vout"</code>, and <code>circuit.gnd</code>.</td></tr>
-              <tr><td>Element</td><td>A SPICE component line with a prefix such as R, C, L, V, M, or X.</td><td>Call <code>circuit.R(...)</code>, <code>circuit.MOSFET(...)</code>, and so on.</td></tr>
-              <tr><td>Simulator</td><td>Configuration and execution wrapper around a circuit.</td><td><code>sim = circuit.simulator()</code>, then call analysis methods.</td></tr>
-              <tr><td>Backend</td><td>The executable simulator that runs the netlist.</td><td>Auto-detect or force <code>"ngspice"</code>, <code>"xyce"</code>, <code>"ltspice"</code>, <code>"spectre"</code>, or <code>"vacask"</code>.</td></tr>
-              <tr><td>Testbench</td><td>A structured DUT wrapper with stimulus, analyses, saves, measurements, corners, and backend-specific netlist emission.</td><td>Use <code>Subcircuit</code> plus <code>Testbench</code> or packaged recipes from <code>testbenches</code>.</td></tr>
+              <tr><td>DC operating point</td><td><code>sim.operating_point()</code></td></tr>
+              <tr><td>DC source sweep</td><td><code>sim.dc(Vin=slice(0, 5, 0.1))</code></td></tr>
+              <tr><td>AC sweep</td><td><code>sim.ac("dec", 100, 1, 1e9)</code></td></tr>
+              <tr><td>Transient</td><td><code>sim.transient(1e-9, 100e-9)</code></td></tr>
+              <tr><td>Noise</td><td><code>sim.noise("out", "0", "Vin")</code></td></tr>
             </tbody>
           </table>
         </div>
-        <p>Ground is always node <code>"0"</code>. The convenience property <code>circuit.gnd</code> returns that string. Components that share the same node string are electrically connected.</p>
+        <p>Simulator options are set before the analysis:</p>
+        <pre><code class="language-python">sim.options(RELTOL="1e-4")
+sim.temperature = 27.0
+sim.save("V(vout)", "V(vin)")
+sim.save_currents = True</code></pre>
       </section>
 
-      <section id="circuit-api">
-        <h2>Circuit API</h2>
-        <h3>Passive Components</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Method</th><th>Signature</th><th>Netlist form</th></tr></thead>
-            <tbody>
-              <tr><td><code>R</code></td><td><code>R(name, positive, negative, value, raw_spice=None)</code></td><td><code>Rname n+ n- value</code></td></tr>
-              <tr><td><code>C</code></td><td><code>C(name, positive, negative, value)</code></td><td><code>Cname n+ n- value</code></td></tr>
-              <tr><td><code>L</code></td><td><code>L(name, positive, negative, value)</code></td><td><code>Lname n+ n- value</code></td></tr>
-              <tr><td><code>K</code></td><td><code>K(name, inductor1, inductor2, coupling)</code></td><td><code>Kname Linductor1 Linductor2 coupling</code></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <pre><code class="language-python">circuit.R(name="load", positive="out", negative=circuit.gnd, value=10e3)
-circuit.C(name="comp", positive="out", negative=circuit.gnd, value=1e-12)
-circuit.L(name="choke", positive="vdd", negative="filtered", value=1e-6)
-circuit.K(name="xfmr", inductor1="primary", inductor2="secondary", coupling=0.98)</code></pre>
+      <section id="results">
+        <h2>5. Read Results</h2>
+        <p>Operating point results return scalar node values. Sweep and time-domain results return arrays plus an axis.</p>
+        <pre><code class="language-python">op = sim.operating_point()
+print(op["vout"])
 
-        <h3>Independent And Behavioral Sources</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Method</th><th>Purpose</th><th>Important parameters</th></tr></thead>
-            <tbody>
-              <tr><td><code>V</code></td><td>DC voltage source.</td><td><code>positive</code>, <code>negative</code>, <code>value</code></td></tr>
-              <tr><td><code>I</code></td><td>DC current source.</td><td><code>positive</code>, <code>negative</code>, <code>value</code></td></tr>
-              <tr><td><code>BV</code></td><td>Behavioral voltage source.</td><td><code>expression="1000*(V(inp)-V(inm))"</code></td></tr>
-              <tr><td><code>BI</code></td><td>Behavioral current source.</td><td><code>expression="0.01*V(gate,source)"</code></td></tr>
-            </tbody>
-          </table>
-        </div>
+dc = sim.dc(Vin=slice(0, 5, 0.5))
+print(dc.sweep)
+print(dc["vout"])
 
-        <h3>Controlled Sources</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Method</th><th>SPICE type</th><th>Meaning</th></tr></thead>
-            <tbody>
-              <tr><td><code>E</code></td><td>VCVS</td><td>Voltage-controlled voltage source with <code>voltage_gain</code>.</td></tr>
-              <tr><td><code>G</code></td><td>VCCS</td><td>Voltage-controlled current source with <code>transconductance</code>.</td></tr>
-              <tr><td><code>F</code></td><td>CCCS</td><td>Current-controlled current source, sensing a named voltage source.</td></tr>
-              <tr><td><code>H</code></td><td>CCVS</td><td>Current-controlled voltage source, sensing a named voltage source.</td></tr>
-            </tbody>
-          </table>
-        </div>
+ac = sim.ac("dec", 20, 1, 1e6)
+print(ac.frequency)
+print(ac["vout"])
 
-        <h3>Semiconductors And Switches</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Method</th><th>Device</th><th>Pin order</th></tr></thead>
-            <tbody>
-              <tr><td><code>D</code></td><td>Diode</td><td><code>anode, cathode, model</code></td></tr>
-              <tr><td><code>Q</code> / <code>BJT</code></td><td>Bipolar transistor</td><td><code>collector, base, emitter, model</code></td></tr>
-              <tr><td><code>M</code> / <code>MOSFET</code></td><td>MOSFET</td><td><code>drain, gate, source, bulk, model</code>; accepts keyword params such as <code>W="1u"</code>, <code>L="130n"</code>.</td></tr>
-              <tr><td><code>J</code></td><td>JFET</td><td><code>drain, gate, source, model</code></td></tr>
-              <tr><td><code>Z</code></td><td>MESFET</td><td><code>drain, gate, source, model</code></td></tr>
-              <tr><td><code>S</code></td><td>Voltage-controlled switch</td><td>Switch terminals plus differential control terminals.</td></tr>
-              <tr><td><code>W</code></td><td>Current-controlled switch</td><td>Switch terminals plus a controlling voltage source name.</td></tr>
-              <tr><td><code>T</code></td><td>Lossless transmission line</td><td>Input pair, output pair, <code>Z0</code>, and <code>TD</code>.</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3>Access And Mutation</h3>
-        <pre><code class="language-python">print(circuit["load"])              # lookup an element by name
-print(circuit.element("load"))      # same lookup
-circuit.set_source_value("in", 1.2) # update a V/I source numeric value
-circuit.raw_spice(".options reltol=1e-6")
-circuit.options(RELTOL="1e-4", METHOD="gear")
-circuit.temp(27)</code></pre>
+tran = sim.transient(1e-6, 1e-3)
+print(tran.time)
+print(tran["vout"])</code></pre>
+        <p>Most result objects also expose parsed <code>.meas</code> values as <code>result.measures</code>.</p>
       </section>
 
-      <section id="sources">
-        <h2>Sources And Waveforms</h2>
-        <p>Use plain <code>V</code> and <code>I</code> for static sources. Use waveform helpers for time-domain stimulus.</p>
+      <section id="units">
+        <h2>6. Use Units</h2>
+        <p>Unit helpers use Python's <code>@</code> operator and format values as SPICE engineering numbers.</p>
+        <pre><code class="language-python">from pyspice_rs.unit import u_V, u_mV, u_kOhm, u_uF
+
+circuit.V(name="bias", positive="vbias", negative=circuit.gnd, value=750 @ u_mV)
+circuit.R(name="load", positive="vout", negative=circuit.gnd, value=10 @ u_kOhm)
+circuit.C(name="cap", positive="vout", negative=circuit.gnd, value=1 @ u_uF)</code></pre>
+      </section>
+
+      <section id="building-blocks">
+        <h2>7. Add Building Blocks</h2>
+        <p>The core API covers common SPICE elements. Keep node names consistent; shared node strings are electrically connected.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Helper</th><th>Use case</th><th>Main parameters</th></tr></thead>
+            <thead><tr><th>Kind</th><th>Methods</th></tr></thead>
             <tbody>
-              <tr><td><code>SinusoidalVoltageSource</code></td><td>Single-tone voltage stimulus.</td><td><code>dc_offset</code>, <code>offset</code>, <code>amplitude</code>, <code>frequency</code></td></tr>
-              <tr><td><code>SinusoidalCurrentSource</code></td><td>Single-tone current stimulus.</td><td><code>dc_offset</code>, <code>offset</code>, <code>amplitude</code>, <code>frequency</code></td></tr>
-              <tr><td><code>PulseVoltageSource</code></td><td>Clocks, resets, step inputs.</td><td><code>initial_value</code>, <code>pulsed_value</code>, <code>pulse_width</code>, <code>period</code>, <code>rise_time</code>, <code>fall_time</code></td></tr>
-              <tr><td><code>PulseCurrentSource</code></td><td>Pulsed current or injected charge.</td><td>Same pulse timing fields as voltage.</td></tr>
-              <tr><td><code>PieceWiseLinearVoltageSource</code></td><td>Arbitrary voltage waveform.</td><td><code>values=[(time, voltage), ...]</code></td></tr>
+              <tr><td>Passive parts</td><td><code>R</code>, <code>C</code>, <code>L</code>, <code>K</code></td></tr>
+              <tr><td>Sources</td><td><code>V</code>, <code>I</code>, <code>BV</code>, <code>BI</code></td></tr>
+              <tr><td>Waveforms</td><td><code>SinusoidalVoltageSource</code>, <code>PulseVoltageSource</code>, <code>PieceWiseLinearVoltageSource</code></td></tr>
+              <tr><td>Controlled sources</td><td><code>E</code>, <code>G</code>, <code>F</code>, <code>H</code></td></tr>
+              <tr><td>Devices</td><td><code>D</code>, <code>Q</code>/<code>BJT</code>, <code>M</code>/<code>MOSFET</code>, <code>J</code>, <code>Z</code></td></tr>
+              <tr><td>Switches and lines</td><td><code>S</code>, <code>W</code>, <code>T</code></td></tr>
+              <tr><td>Raw SPICE</td><td><code>raw_spice</code>, <code>include</code>, <code>lib</code>, <code>parameter</code>, <code>options</code></td></tr>
             </tbody>
           </table>
         </div>
@@ -225,229 +160,95 @@ circuit.temp(27)</code></pre>
     pulsed_value=1.8,
     pulse_width=5e-9,
     period=10e-9,
-    rise_time=100e-12,
-    fall_time=100e-12,
 )
 
-circuit.PieceWiseLinearVoltageSource(
-    name="dac",
-    positive="dac_out",
-    negative=circuit.gnd,
-    values=[(0.0, 0.0), (1e-6, 1.65), (2e-6, 3.3)],
+circuit.MOSFET(
+    name="n1",
+    drain="out",
+    gate="in",
+    source=circuit.gnd,
+    bulk=circuit.gnd,
+    model="nch",
+    W="1u",
+    L="130n",
 )</code></pre>
       </section>
 
       <section id="models">
-        <h2>Models And Subcircuits</h2>
-        <h3>Device models</h3>
+        <h2>8. Add Models and Subcircuits</h2>
+        <p>Semiconductors and switches usually need model definitions. Use inline models, includes, libraries, or raw SPICE when needed.</p>
         <pre><code class="language-python">circuit.model("nch", "NMOS", LEVEL=1, VTO=0.4, KP=200e-6)
-circuit.model("pch", "PMOS", LEVEL=1, VTO=-0.4, KP=100e-6)
-circuit.model("sw1", "SW", VT=2.5, VH=0.5, RON=1, ROFF=1e6)</code></pre>
-        <p>Common model kinds include <code>D</code>, <code>NPN</code>, <code>PNP</code>, <code>NMOS</code>, <code>PMOS</code>, <code>NJF</code>, <code>PJF</code>, <code>NMF</code>, <code>SW</code>, and <code>CSW</code>.</p>
-        <h3>External model files</h3>
-        <pre><code class="language-python">circuit.include("/path/to/device_models.spice")
+circuit.include("/path/to/device_models.spice")
 circuit.lib("/path/to/corners.lib", "tt")
-circuit.parameter("Rval", "1k")
-circuit.R(name="param", positive="a", negative="b", value=0, raw_spice="{Rval}")</code></pre>
-        <h3>Subcircuit instances</h3>
-        <p>For quick pass-through, define raw <code>.subckt</code> text and instantiate it with <code>X</code>. For structured reusable designs, prefer <code>Subcircuit</code> and <code>Testbench</code> as shown later.</p>
-        <pre><code class="language-python">circuit.raw_spice(".subckt inverter in out vdd vss")
-circuit.raw_spice("Mn out in vss vss nch")
-circuit.raw_spice("Mp out in vdd vdd pch")
-circuit.raw_spice(".ends inverter")
-circuit.X("1", "inverter", "in", "out", "vdd", "0")</code></pre>
-      </section>
+circuit.parameter("RLOAD", "1k")</code></pre>
+        <p>For reusable blocks, use <code>Subcircuit</code> with <code>Testbench</code>. The examples in this repo use that style for larger circuits.</p>
+        <pre><code class="language-python">dut = ps.Subcircuit("divider", ["vin", "vout"])
+dut.R(name="top", positive="vin", negative="vout", value=2 @ u_kOhm)
+dut.R(name="bot", positive="vout", negative=dut.gnd, value=1 @ u_kOhm)
 
-      <section id="simulation">
-        <h2>Simulation</h2>
-        <h3>Create and configure a simulator</h3>
-        <pre><code class="language-python">sim = circuit.simulator()                    # auto-detect backend
-sim = circuit.simulator(simulator="xyce")    # force a backend
-
-sim.options(RELTOL="1e-4", ABSTOL="1e-12")
-sim.temperature = 27.0
-sim.nominal_temperature = 27.0
-sim.initial_condition(out=0.0)
-sim.node_set(bias=0.7)
-sim.save("V(out)", "V(in)")
-sim.save_currents = True
-sim.measure("tran", "trise", "TRIG", "V(out)", "VAL=0.5", "RISE=1", "TARG", "V(out)", "VAL=4.5", "RISE=1")</code></pre>
-        <h3>Analysis methods</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Method</th><th>Purpose</th><th>Example</th></tr></thead>
-            <tbody>
-              <tr><td><code>operating_point()</code></td><td>DC steady-state.</td><td><code>op = sim.operating_point()</code></td></tr>
-              <tr><td><code>dc(**sweeps)</code></td><td>Source sweeps using Python <code>slice</code>.</td><td><code>dc = sim.dc(Vin=slice(0, 5, 0.01))</code></td></tr>
-              <tr><td><code>ac(...)</code></td><td>Small-signal frequency sweep.</td><td><code>ac = sim.ac("dec", 100, 1, 1e9)</code></td></tr>
-              <tr><td><code>transient(...)</code></td><td>Time-domain simulation.</td><td><code>tran = sim.transient(1e-9, 100e-9)</code></td></tr>
-              <tr><td><code>noise(...)</code></td><td>Output-referred noise.</td><td><code>noise = sim.noise("out", "0", "Vin")</code></td></tr>
-              <tr><td><code>transfer_function()</code> / <code>tf()</code></td><td>DC gain and impedance.</td><td><code>tf = sim.tf("V(out)", "Vin")</code></td></tr>
-              <tr><td><code>dc_sensitivity()</code>, <code>ac_sensitivity()</code></td><td>Component sensitivity.</td><td><code>sens = sim.dc_sensitivity("V(out)")</code></td></tr>
-              <tr><td><code>polezero()</code></td><td>Poles and zeros.</td><td><code>pz = sim.polezero("in", "0", "out", "0", "vol", "pz")</code></td></tr>
-              <tr><td><code>distortion()</code></td><td>Harmonic/intermodulation distortion.</td><td><code>d = sim.distortion("dec", 10, 100, 1e8)</code></td></tr>
-              <tr><td><code>fourier()</code></td><td>Transient plus Fourier post-processing.</td><td><code>tran = sim.fourier(1e3, ["V(out)"])</code></td></tr>
-              <tr><td><code>pss()</code></td><td>Periodic steady state.</td><td><code>pss = sim.pss(1e9, 10e-9, "out")</code></td></tr>
-              <tr><td><code>s_param()</code>, <code>network_params()</code></td><td>S-parameter workflows.</td><td><code>sp = sim.s_param("dec", 100, 1e6, 1e10)</code></td></tr>
-              <tr><td><code>harmonic_balance()</code></td><td>HB analysis for RF/nonlinear periodic circuits.</td><td><code>hb = sim.harmonic_balance([1e9], [7])</code></td></tr>
-              <tr><td><code>stability()</code></td><td>Loop stability analysis.</td><td><code>stb = sim.stability("probe")</code></td></tr>
-              <tr><td><code>transient_noise()</code></td><td>Transient noise where supported.</td><td><code>tn = sim.transient_noise(1e-9, 1e-6)</code></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <h3>Vendor-specific helpers</h3>
-        <pre><code class="language-python">xyce_mc = sim.xyce_sampling(100, [("R1:R", "normal(1000,50)")])
-xyce_pce = sim.xyce_pce(100, [("R1:R", "normal(1000,50)")], expansion_order=3)
-fft = sim.xyce_fft("V(out)", np=1024, start=0.0, stop=1e-3)
-
-raw = sim.spectre_sweep("Rload", 100, 10000, 100, "ac1 ac start=1 stop=1G dec=100")
-mc = sim.spectre_montecarlo(100, "tran1 tran stop=1u", inner_type="tran", seed=42)
-pac = sim.spectre_pac(1e9, 10e-9, pss_harmonics=10)</code></pre>
-      </section>
-
-      <section id="results">
-        <h2>Results</h2>
-        <p>Result objects are Python wrappers around parsed simulator output. Use index access for explicit lookup and convenience properties for axes.</p>
-        <pre><code class="language-python">op = sim.operating_point()
-print(op["vout"])
-print(op.measures)
-
-dc = sim.dc(Vin=slice(0, 1.8, 0.01))
-print(dc.sweep)
-print(dc["out"])
-print(dc.nodes)
-print(dc.branches)
-
-ac = sim.ac("dec", 100, 1, 1e9)
-print(ac.frequency)
-gain = ac["out"]
-
-tran = sim.transient(1e-9, 100e-9)
-print(tran.time)
-print(tran["out"])</code></pre>
-        <p>Most waveform-like result types support <code>result["name"]</code>, attribute-style lookup for valid Python identifiers, and a <code>measures</code> dictionary for parsed scalar measurements. <code>XyceFftAnalysis</code> also exposes <code>frequency</code>, <code>magnitude</code>, <code>phase</code>, <code>enob</code>, <code>sfdr_db</code>, <code>snr_db</code>, and <code>thd_db</code>.</p>
+tb = ps.Testbench(dut)
+tb.V(name="supply", positive="vin", negative=dut.gnd, value=10 @ u_V)
+print(tb.netlist("ngspice"))</code></pre>
       </section>
 
       <section id="backends">
-        <h2>Backends</h2>
-        <p>Use <code>CircuitSimulator.available_backends()</code> to see what is installed. Auto-detection also considers requested analysis type and required circuit features.</p>
-        <pre><code class="language-python">from pyspice_rs import CircuitSimulator
-print(CircuitSimulator.available_backends())
+        <h2>9. Choose a Backend</h2>
+        <p>Supported backend names include <code>ngspice</code>, <code>xyce</code>, <code>ltspice</code>, <code>spectre</code>, and <code>vacask</code>. Availability depends on what is installed on your machine.</p>
+        <pre><code class="language-python">print(ps.CircuitSimulator.available_backends())
 
-sim = circuit.simulator()
+sim = circuit.simulator(simulator="ngspice")
 print(sim.check_backend("ngspice"))</code></pre>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Backend</th><th>Names</th><th>Best fit</th><th>Notable support</th></tr></thead>
-            <tbody>
-              <tr><td>ngspice</td><td><code>ngspice</code>, <code>ngspice-subprocess</code>, <code>ngspice-shared</code></td><td>Default open-source SPICE, broad compatibility.</td><td>XSPICE, OSDI, <code>.control</code>, Laplace B-sources, measurements.</td></tr>
-              <tr><td>Xyce</td><td><code>xyce</code>, <code>xyce-serial</code>, <code>xyce-parallel</code></td><td>Large circuits, sweeps, statistical runs, FFT metrics.</td><td>Measurements and step parameters; no XSPICE or OSDI.</td></tr>
-              <tr><td>LTspice</td><td><code>ltspice</code></td><td>Switching power supplies and LTspice-specific flows.</td><td>Measurements, step parameters, Laplace B-sources, network parameters.</td></tr>
-              <tr><td>Spectre</td><td><code>spectre</code></td><td>Commercial analog/RF and IC design.</td><td>OSDI, Verilog co-simulation, SpectreRF helpers, Spectre code generation.</td></tr>
-              <tr><td>VacaSk</td><td><code>vacask</code>, <code>vacask-shared</code></td><td>Compact model and RF-oriented workflows.</td><td>OSDI plus VacaSk-specific netlist emission.</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="callout">
-          <p><strong>Feature-aware selection:</strong> XSPICE forces ngspice. OSDI requires ngspice, VacaSk, or Spectre. <code>.control</code> blocks require ngspice. Verilog co-simulation currently routes to ngspice or Spectre. If features conflict, auto-selection reports the incompatibility instead of silently picking an invalid backend.</p>
-        </div>
+        <p>Start with <code>ngspice</code>. Use another backend when your circuit or workflow needs it: Xyce for large sweeps and sampling, LTspice for LTspice-oriented flows, Spectre for commercial analog/RF flows, or VacaSk for compact-model workflows.</p>
       </section>
 
       <section id="linting">
-        <h2>Linting</h2>
-        <p>The linter checks netlist structure and backend-specific hazards before you spend time on a failing simulator run.</p>
-        <pre><code class="language-python">from pyspice_rs import lint
-
-report = lint("""
-.title lint demo
-V1 in 0 1
-R1 in out 1k
-.end
-""", backend="ngspice")
+        <h2>10. Lint Before Running</h2>
+        <p>The linter catches common netlist problems and some backend-specific issues before you run a simulator.</p>
+        <pre><code class="language-python">report = ps.lint(str(circuit), backend="ngspice")
 
 for error in report["errors"]:
-    print("error:", error["message"])
+    print(error["message"])
+
 for warning in report["warnings"]:
-    print("warning:", warning["message"])</code></pre>
-        <p>Checks include missing <code>.end</code>, missing ground, duplicate elements, floating nodes, zero-value passive parts, missing models, undefined parameters, and backend-specific warnings such as unsupported <code>.control</code>, <code>.pz</code>, or <code>.sens</code> usage.</p>
+    print(warning["message"])</code></pre>
       </section>
 
       <section id="testbenches">
-        <h2>Reusable Testbenches</h2>
-        <p>The <code>testbenches</code> Python package provides reusable design recipes. They return <code>DesignBench</code> objects, which contain a normal <code>pyspice_rs.Testbench</code> plus intent, measurement names, result fields, and validation guidance.</p>
-        <pre><code class="language-python">import pyspice_rs as ps
-from testbenches import amplifier_voltage_gain, ValidationRule, MetricSpec, extract_metrics, validate_metrics
+        <h2>11. Reuse Testbenches</h2>
+        <p>The optional <code>testbenches</code> package contains small recipes for common design checks. A recipe returns a <code>DesignBench</code> with a normal <code>pyspice_rs.Testbench</code> inside it.</p>
+        <pre><code class="language-python">from testbenches import amplifier_voltage_gain
 
 dut = ps.Subcircuit("amp", ["vin", "vout"])
-dut.R(name="bias", positive="vout", negative=dut.gnd, value=1e6)
+dut.R(name="load", positive="vout", negative=dut.gnd, value=1e6)
 
 bench = amplifier_voltage_gain(ps, dut, input_node="vin", output_node="vout")
-print(bench.netlist("ngspice"))
-
-metrics = {"gain_db": 40.1, "vref": 1.205}
-report = validate_metrics(metrics, [
-    ValidationRule("gain target", "gain_db", expected=40.0, tolerance=0.5),
-])
-print(report.passed)</code></pre>
-        <h3>Recipe families</h3>
-        <ul>
-          <li>Amplifiers: voltage gain, current gain, transimpedance, charge amplifier.</li>
-          <li>Converters: DAC static linearity and ADC ramp-code tests.</li>
-          <li>Switching: switch characterization, mux routing, demux routing, sample-and-hold.</li>
-          <li>Timing/RF: PLL lock and spur-oriented transient/Fourier setup.</li>
-          <li>References: bandgap reference line and temperature regulation setup.</li>
-        </ul>
-        <h3>Corners and Monte Carlo</h3>
-        <pre><code class="language-python">from testbenches import CornerCase, MonteCarloPlan, corner_netlists, monte_carlo_netlist
-
-corners = [
-    CornerCase("tt_27", temperature=27, parameters={"vdd_nom": 3.3}),
-    CornerCase("ss_hot", temperature=125, parameters={"vdd_nom": 3.0}),
-]
-netlists = corner_netlists(lambda: amplifier_voltage_gain(ps, dut), corners)
-
-mc = MonteCarloPlan(samples=200, distributions={"Rload": "normal(1000,50)"})
-xyce_netlist = monte_carlo_netlist(amplifier_voltage_gain(ps, dut), mc)</code></pre>
-        <p>Validation helpers can parse CSV, TSV, whitespace scalar tables, repeated <code>.MEASURE ... = value</code> logs, Xyce scalar files such as <code>.mt0</code>/<code>.ms0</code>/<code>.ma0</code>, and Spectre scalar exports including <code>mcdata</code> with sibling <code>mcparam</code> labels.</p>
+print(bench.netlist("ngspice"))</code></pre>
       </section>
 
-      <section id="examples">
-        <h2>Examples</h2>
-        <p>The <code>examples/</code> directory contains end-to-end Python scripts. They are designed to run without needing every simulator installed because many examples focus on netlist generation and expected electrical relationships.</p>
+      <section id="next">
+        <h2>12. Next</h2>
+        <p>After the first circuit, read the examples in order. They move from basic passive circuits to models, subcircuits, backend selection, Verilog-A, and reusable design testbenches.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Range</th><th>Topics</th></tr></thead>
+            <thead><tr><th>Examples</th><th>Topic</th></tr></thead>
             <tbody>
-              <tr><td>01-03</td><td>Voltage divider, RC low-pass, RLC band-pass.</td></tr>
-              <tr><td>04-08</td><td>BJT, CMOS, op-amp, diode rectifier, differential pair.</td></tr>
-              <tr><td>09-14</td><td>Controlled sources, subcircuits, JFET, transmission line, switches, PWL DAC.</td></tr>
-              <tr><td>15-18</td><td>Linting, simulator configuration, Verilog-A inline, Verilog digital integration.</td></tr>
-              <tr><td>19-22</td><td>Backend hotswap, PDK hotswap, combined hotswap, reusable design testbenches.</td></tr>
+              <tr><td><code>01</code>-<code>03</code></td><td>Voltage divider, RC low-pass, RLC band-pass.</td></tr>
+              <tr><td><code>04</code>-<code>08</code></td><td>BJT, CMOS, op-amp, diode rectifier, differential pair.</td></tr>
+              <tr><td><code>09</code>-<code>14</code></td><td>Controlled sources, subcircuits, JFET, transmission line, switches, PWL DAC.</td></tr>
+              <tr><td><code>15</code>-<code>18</code></td><td>Linting, simulator configuration, Verilog-A, digital integration.</td></tr>
+              <tr><td><code>19</code>-<code>22</code></td><td>Backend hotswap, PDK hotswap, combined hotswap, design testbenches.</td></tr>
             </tbody>
           </table>
         </div>
         <pre><code class="language-bash">python examples/01_voltage_divider.py
+python examples/02_rc_lowpass.py
 python examples/22_design_testbenches.py</code></pre>
-      </section>
-
-      <section id="troubleshooting">
-        <h2>Troubleshooting</h2>
-        <h3><code>ImportError: pyspice_rs not built</code></h3>
-        <p>Run <code>maturin develop</code> in your active virtual environment. Tests skip Python bindings if the extension has not been built.</p>
-        <h3>No backend found</h3>
-        <p>Install a simulator and make sure its executable is on <code>PATH</code>. Start with ngspice unless your design specifically needs another backend.</p>
-        <h3>Unsupported analysis</h3>
-        <p>Try a backend that supports the requested analysis. For example, Xyce is used for statistical sampling and FFT metrics, Spectre for SpectreRF helpers, VacaSk or Spectre for stability, and ngspice for XSPICE and control-block workflows.</p>
-        <h3>Model not found</h3>
-        <p>Add <code>model(...)</code>, <code>include(...)</code>, or <code>lib(...)</code>. Semiconductor and switch elements normally require simulator model definitions.</p>
-        <h3>Unexpected node lookup failure</h3>
-        <p>Use the exact node name emitted by the simulator. Result keys are backend-normalized where possible, but branch currents and special variables can still use simulator-specific names.</p>
       </section>
     </main>
   </div>
 
   <footer class="footer">
-    DeSpice user documentation. For internals and contribution guidance, see <a href="developers.html">Developer docs</a>.
+    For repo internals, see <a href="developers.html">Developer notes</a>.
   </footer>
 </body>
 </html>

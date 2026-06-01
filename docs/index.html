@@ -3,49 +3,49 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DeSpice Documentation</title>
+  <title>DeSpice Docs</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="site-header">
     <nav class="nav" aria-label="Primary">
-      <a class="brand" href="index.html">DeSpice <span>pyspice-rs</span></a>
+      <a class="brand" href="index.html">DeSpice</a>
       <div class="nav-links">
-        <a href="users.html">User docs</a>
-        <a href="developers.html">Developer docs</a>
+        <a href="users.html">User guide</a>
+        <a href="developers.html">Developer notes</a>
       </div>
     </nav>
   </header>
 
-  <main>
-    <section class="hero">
-      <h1>Rust-powered SPICE automation for Python users and systems developers.</h1>
-      <p>DeSpice, packaged as <code>pyspice-rs</code>, builds circuits in Python, emits backend-specific netlists through a Rust intermediate representation, runs SPICE simulators, parses results, and provides reusable analog and mixed-signal design testbenches.</p>
-      <div class="hero-actions">
-        <a class="button" href="users.html">Read user docs</a>
-        <a class="button secondary" href="developers.html">Read developer docs</a>
-      </div>
+  <main class="page">
+    <section class="intro">
+      <p class="eyebrow">pyspice-rs</p>
+      <h1>Python tools for building and running SPICE circuits.</h1>
+      <p>DeSpice lets you describe circuits in Python, emit SPICE netlists, run simulator backends, and read results back into Python.</p>
     </section>
 
-    <section class="hero" aria-labelledby="audiences">
-      <h2 id="audiences">Choose Your Path</h2>
-      <div class="grid">
-        <article class="card">
-          <h3>Users</h3>
-          <p>Install the package, build circuits, run operating point, DC, AC, transient, RF, and statistical analyses, use units, lint netlists, and apply reusable design testbenches.</p>
-          <a href="users.html">Open the user guide</a>
-        </article>
-        <article class="card">
-          <h3>Developers</h3>
-          <p>Understand the Rust/Python architecture, backend selection, code generation pipeline, result parsing, test layout, C ABI, schema, and release workflow.</p>
-          <a href="developers.html">Open the developer guide</a>
-        </article>
-      </div>
+    <section>
+      <h2>Start Here</h2>
+      <ol class="link-list">
+        <li><a href="users.html#install">Install the package</a></li>
+        <li><a href="users.html#first-circuit">Build a first circuit</a></li>
+        <li><a href="users.html#simulate">Run a simulation</a></li>
+        <li><a href="users.html#results">Read results</a></li>
+        <li><a href="users.html#next">Choose what to learn next</a></li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Reference</h2>
+      <ul class="link-list">
+        <li><a href="users.html">User guide</a> for the Python API, examples, backends, linting, and testbenches.</li>
+        <li><a href="developers.html">Developer notes</a> for repo layout, architecture, tests, and contribution workflow.</li>
+      </ul>
     </section>
   </main>
 
   <footer class="footer">
-    Static documentation hosted from <code>docs/</code> by GitHub Pages.
+    Static docs served from <code>docs/</code>.
   </footer>
 </body>
 </html>

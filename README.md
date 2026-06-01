@@ -1,125 +1,58 @@
-# PySpice
+# DeSpice
 
-Rust-powered Python library for SPICE circuit simulation. Drop-in circuit description API with a backend-neutral IR, multi-backend support, and exports for Rust, Python (PyO3), and C (FFI).
+Python library for building SPICE circuits, generating netlists, running simulator backends, and reading results.
 
-## Features
+The Python package is named `pyspice-rs` and imported as `pyspice_rs`.
 
-- **5 backends supported** -- ngspice, Xyce, LTspice, Spectre, VacaSk
-- **Code generators** -- SPICE3 and Spectre netlist emission from the IR
-- **C ABI** -- link directly from C/C++/Zig
+## Install for Development
 
-## Quick Start
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install maturin numpy pytest
+maturin develop
+```
 
-### Prerequisites
-
-- Rust (stable)
-- Python 3.10+
-- At least one SPICE backend on `$PATH` (e.g. `ngspice`)
-
-Or use the Nix devshell which provides everything:
+If you use Nix:
 
 ```bash
 nix develop
 ```
 
-### Build & Install
+Install at least one simulator if you want to run analyses. Start with `ngspice` unless you need a specific backend.
 
-```bash
-# Rust library
-cargo build
-
-# Python package
-python3 -m venv .venv
-source .venv/bin/activate
-pip install maturin
-maturin develop
-```
-
-### Usage
+## First Circuit
 
 ```python
-from pyspice_rs import Circuit
+import pyspice_rs as ps
 from pyspice_rs.unit import u_V, u_kOhm
 
-circuit = Circuit("Voltage Divider")
-
-circuit.V(name="in", positive="input", negative=circuit.gnd, value=10 @ u_V)
-circuit.R(name="1", positive="input", negative="output", value=2 @ u_kOhm)
-circuit.R(name="2", positive="output", negative=circuit.gnd, value=1 @ u_kOhm)
+circuit = ps.Circuit("voltage_divider")
+circuit.V(name="in", positive="vin", negative=circuit.gnd, value=10 @ u_V)
+circuit.R(name="top", positive="vin", negative="vout", value=2 @ u_kOhm)
+circuit.R(name="bot", positive="vout", negative=circuit.gnd, value=1 @ u_kOhm)
 
 print(circuit)
 
-# Simulate
-sim = circuit.simulator()
-result = sim.operating_point()
-print(result["output"])  # ~3.333V
+sim = circuit.simulator(simulator="ngspice")
+op = sim.operating_point()
+print(op["vout"])
 ```
 
-See the [`examples/`](examples/) directory for 22 working examples covering voltage dividers, filters, BJT/MOSFET amplifiers, op-amps, subcircuits, Verilog-A, digital co-simulation, backend/PDK hotswapping, and reusable design testbenches.
+## Docs
+
+- [User guide](docs/users.html): install, build circuits, simulate, read results, choose backends, lint, and use examples.
+- [Developer notes](docs/developers.html): repo layout, architecture, tests, and contribution checklists.
+- [Examples](examples/): executable scripts ordered from basic circuits to backend and testbench workflows.
+
+## Test
+
+```bash
+cargo test
+maturin develop
+python3 -m pytest -v
+```
 
 ## Backends
 
-| Backend | Status | Notes |
-|---------|--------|-------|
-| ngspice | Supported | Default backend, XSPICE extensions |
-| Xyce | Supported | Sandia parallel simulator |
-| LTspice | Supported | Windows/macOS/Wine |
-| Spectre | Supported (needs testing if anyone can) | Cadence, native Spectre syntax codegen |
-| VacaSk | Supported | Compact model testing via OpenVAF |
-
-See the hosted documentation entry points in [`docs/users.html`](docs/users.html) and
-[`docs/developers.html`](docs/developers.html) for backend details, analysis
-coverage, user workflows, and maintainer guidance.
-
-## Exports
-
-The library supports three output targets:
-
-- **Rust crate** (`rlib`) -- use as a native Rust dependency
-- **Python module** (`cdylib` + PyO3) -- `pip install` via maturin
-- **C ABI** (`cdylib` + `--features cabi`) -- `#include` and link
-
-```bash
-# Rust
-cargo build --release
-
-# Python
-maturin build --release
-
-# C ABI
-cargo build --release --features cabi --no-default-features
-```
-
-## Testing
-
-```bash
-# Rust tests
-cargo test
-
-# Python tests
-maturin develop && python3 -m pytest -v
-```
-
-## Project Structure
-
-```
-src/
-  circuit.rs      Circuit/Subcircuit construction
-  ir/             Backend-neutral intermediate representation
-  codegen/        Netlist emitters (SPICE3, Spectre)
-  backend/        Simulator drivers (ngspice, xyce, ltspice, spectre, vacask)
-  simulation.rs   Simulation orchestration
-  result.rs       Normalized result parsing
-  lint.rs         Circuit topology linting
-  unit.rs         Engineering unit system
-  python.rs       PyO3 bindings
-  cabi.rs         C FFI exports
-examples/         Python usage examples
-tests/            Rust + Python test suites
-docs/             Static HTML documentation
-schema/           JSON schema for serialized IR
-```
-
-## License
-
-See repository for license details.
+DeSpice has support for `ngspice`, `xyce`, `ltspice`, `spectre`, and `vacask`. Backend availability depends on what is installed locally.

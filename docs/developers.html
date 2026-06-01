@@ -3,342 +3,195 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DeSpice Developer Documentation</title>
+  <title>DeSpice Developer Notes</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="site-header">
     <nav class="nav" aria-label="Primary">
-      <a class="brand" href="index.html">DeSpice <span>developer docs</span></a>
+      <a class="brand" href="index.html">DeSpice</a>
       <div class="nav-links">
-        <a href="users.html">User docs</a>
-        <a href="developers.html" aria-current="page">Developer docs</a>
+        <a href="users.html">User guide</a>
+        <a href="developers.html" aria-current="page">Developer notes</a>
       </div>
     </nav>
   </header>
 
-  <section class="hero">
-    <h1>Developer Guide</h1>
-    <p>Maintain, extend, test, and release DeSpice. This guide covers the Rust crate, PyO3 bindings, backend-neutral IR, code generators, simulator drivers, result parsing, linting, testbench helpers, C ABI, schemas, tests, and documentation publishing.</p>
-  </section>
-
   <div class="layout">
     <aside class="toc" aria-label="Table of contents">
-      <strong>Contents</strong>
-      <a href="#repo">Repository Map</a>
-      <a href="#tooling">Tooling</a>
+      <strong>Developer Notes</strong>
+      <a href="#setup">Setup</a>
+      <a href="#map">Repository map</a>
       <a href="#architecture">Architecture</a>
-      <a href="#python-bindings">Python Bindings</a>
-      <a href="#ir">Intermediate Representation</a>
-      <a href="#codegen">Code Generation</a>
-      <a href="#backends">Backend System</a>
-      <a href="#results">Result Parsing</a>
-      <a href="#linting">Linting</a>
-      <a href="#testbenches">Testbench Helpers</a>
-      <a href="#cabi">C ABI</a>
-      <a href="#testing">Testing</a>
-      <a href="#adding-features">Adding Features</a>
-      <a href="#docs">Documentation Hosting</a>
+      <a href="#bindings">Python bindings</a>
+      <a href="#ir-codegen">IR and codegen</a>
+      <a href="#backends">Backends</a>
+      <a href="#results">Results</a>
+      <a href="#tests">Tests</a>
+      <a href="#changes">Change checklists</a>
+      <a href="#docs">Docs</a>
     </aside>
 
     <main>
-      <section id="repo">
-        <h2>Repository Map</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
-            <tbody>
-              <tr><td><code>Cargo.toml</code></td><td>Rust crate metadata. The library builds as <code>cdylib</code> and <code>rlib</code>. Default feature is <code>python</code>; optional feature <code>cabi</code> exposes the C ABI.</td></tr>
-              <tr><td><code>pyproject.toml</code></td><td>maturin/Python package config. The Python module is <code>pyspice_rs._native</code>; wrapper package lives under <code>python/</code>.</td></tr>
-              <tr><td><code>src/circuit.rs</code></td><td>Core circuit builder, elements, formatting, models, parameters, raw SPICE, and legacy string netlist display.</td></tr>
-              <tr><td><code>src/ir/</code></td><td>Backend-neutral serializable circuit and testbench representation.</td></tr>
-              <tr><td><code>src/codegen/</code></td><td>Netlist emitters for SPICE3 dialects, Spectre, and VacaSk.</td></tr>
-              <tr><td><code>src/backend/</code></td><td>Backend trait, detection, capability filtering, and subprocess/shared driver implementations.</td></tr>
-              <tr><td><code>src/simulation.rs</code></td><td>Simulation configuration, analysis methods, backend selection, and netlist assembly for runs.</td></tr>
-              <tr><td><code>src/result.rs</code>, <code>src/rawfile.rs</code>, <code>src/psf.rs</code></td><td>Raw output parsing and normalized analysis result objects.</td></tr>
-              <tr><td><code>src/lint.rs</code></td><td>Netlist lint checks and backend-specific diagnostics.</td></tr>
-              <tr><td><code>src/unit.rs</code></td><td>Engineering unit system and SPICE number formatting.</td></tr>
-              <tr><td><code>src/python.rs</code></td><td>PyO3 surface for circuits, simulators, results, linting, subcircuits, testbenches, model libraries, Verilog, and units.</td></tr>
-              <tr><td><code>src/cabi.rs</code></td><td>C ABI exports for non-Python consumers.</td></tr>
-              <tr><td><code>python/testbenches/</code></td><td>Reusable design testbench recipes plus validation, corner, and Monte Carlo helpers.</td></tr>
-              <tr><td><code>examples/</code></td><td>Python example scripts used as executable API documentation.</td></tr>
-              <tr><td><code>tests/</code></td><td>Rust and Python tests for circuits, codegen, backends, units, examples, linting, simulations, and testbenches.</td></tr>
-              <tr><td><code>schema/</code></td><td>JSON schema and example IR documents.</td></tr>
-              <tr><td><code>nix/</code></td><td>Nix packages/devshell inputs for simulator and tool integration.</td></tr>
-              <tr><td><code>docs/</code></td><td>Static HTML documentation published by GitHub Pages.</td></tr>
-            </tbody>
-          </table>
-        </div>
+      <section class="intro">
+        <h1>Developer Notes</h1>
+        <p>These notes are for maintaining the library. They summarize where code lives, how the pieces connect, and what to update when adding features.</p>
       </section>
 
-      <section id="tooling">
-        <h2>Tooling</h2>
-        <h3>Local environment</h3>
+      <section id="setup">
+        <h2>Setup</h2>
         <pre><code class="language-bash">nix develop
 python3 -m venv .venv
 source .venv/bin/activate
 pip install maturin numpy pytest
 maturin develop</code></pre>
-        <h3>Core commands</h3>
-        <pre><code class="language-bash">cargo build
-cargo test
-maturin develop
+        <p>Core checks:</p>
+        <pre><code class="language-bash">cargo test
 python3 -m pytest -v
 cargo build --release --features cabi --no-default-features</code></pre>
-        <p>Some tests require the Python extension to be built first. Python tests skip with an explicit message if <code>pyspice_rs</code> cannot be imported.</p>
+      </section>
+
+      <section id="map">
+        <h2>Repository Map</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>src/circuit.rs</code></td><td>Classic circuit builder and string netlist output.</td></tr>
+              <tr><td><code>src/ir/</code></td><td>Structured circuit and testbench representation.</td></tr>
+              <tr><td><code>src/codegen/</code></td><td>Backend-specific netlist emitters.</td></tr>
+              <tr><td><code>src/backend/</code></td><td>Backend detection, capabilities, and simulator drivers.</td></tr>
+              <tr><td><code>src/simulation.rs</code></td><td>Analysis setup, backend selection, and run orchestration.</td></tr>
+              <tr><td><code>src/result.rs</code>, <code>src/rawfile.rs</code>, <code>src/psf.rs</code></td><td>Simulator output parsing and normalized result types.</td></tr>
+              <tr><td><code>src/python.rs</code></td><td>PyO3 bindings exposed as <code>pyspice_rs</code>.</td></tr>
+              <tr><td><code>src/lint.rs</code></td><td>Static netlist linting.</td></tr>
+              <tr><td><code>python/testbenches/</code></td><td>Reusable Python testbench recipes and metric helpers.</td></tr>
+              <tr><td><code>examples/</code></td><td>Executable usage examples.</td></tr>
+              <tr><td><code>tests/</code></td><td>Rust and Python test suites.</td></tr>
+              <tr><td><code>schema/</code></td><td>JSON schema and serialized IR examples.</td></tr>
+              <tr><td><code>docs/</code></td><td>Static HTML docs.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section id="architecture">
         <h2>Architecture</h2>
-        <p>DeSpice has two complementary paths: the classic <code>Circuit</code> builder for direct Python-to-netlist workflows, and the structured IR path used by <code>Subcircuit</code>/<code>Testbench</code> for backend-specific code generation.</p>
-        <pre><code>Python user code
+        <p>There are two user-facing paths.</p>
+        <ul>
+          <li><code>Circuit</code> is the direct Python-to-netlist builder.</li>
+          <li><code>Subcircuit</code> and <code>Testbench</code> use the structured IR and backend-specific code generators.</li>
+        </ul>
+        <pre><code>Python API
   |
-  |-- Circuit API -------------------> src/circuit.rs ----------+
-  |                                                            |
-  |-- Subcircuit/Testbench API -----> src/ir/mod.rs --------+   |
-                                                           |   |
-                                                           v   v
-                                                    src/codegen/* or legacy string deck
-                                                           |
-                                                    src/backend/* detection and run
-                                                           |
-                                                    simulator output files/stdout
-                                                           |
-                                                    src/rawfile.rs / src/psf.rs
-                                                           |
-                                                    src/result.rs normalized results
-                                                           |
-                                                    PyO3 result wrappers</code></pre>
-        <p>The design goal is to keep semantics structured as long as possible. New backend-specific netlist behavior should usually be implemented in <code>src/codegen/</code> rather than by string rewriting a previously emitted deck.</p>
+  |-- Circuit -----------------------> src/circuit.rs
+  |
+  |-- Subcircuit/Testbench ----------> src/ir/mod.rs
+                                      |
+                                      v
+                               src/codegen/*
+                                      |
+                                      v
+                               src/backend/*
+                                      |
+                                      v
+                          rawfile/PSF parsers -> result wrappers</code></pre>
+        <p>Prefer preserving structure until code generation. Avoid fixing backend syntax by rewriting already-emitted strings when a code generator can own the behavior.</p>
       </section>
 
-      <section id="python-bindings">
+      <section id="bindings">
         <h2>Python Bindings</h2>
-        <p><code>src/python.rs</code> defines the public Python API with PyO3. The wrapper package in <code>python/pyspice_rs/__init__.py</code> re-exports the native extension.</p>
-        <h3>Major Python classes</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Python class/function</th><th>Rust wrapper</th><th>Role</th></tr></thead>
-            <tbody>
-              <tr><td><code>Circuit</code></td><td><code>PyCircuit</code></td><td>Direct circuit construction and simulation.</td></tr>
-              <tr><td><code>CircuitSimulator</code></td><td><code>PySimulator</code></td><td>Run analyses and configure saves, options, measurements, temperatures, steps, and backend.</td></tr>
-              <tr><td><code>Subcircuit</code></td><td><code>PySubcircuit</code></td><td>Structured reusable circuit block backed by IR.</td></tr>
-              <tr><td><code>Testbench</code></td><td><code>PyTestbench</code></td><td>DUT wrapper with stimulus, analyses, saves, corners, and netlist emission.</td></tr>
-              <tr><td><code>ModelLibrary</code></td><td><code>PyModelLibrary</code></td><td>PDK/model-library reference with backend-specific paths.</td></tr>
-              <tr><td><code>lint</code></td><td><code>lint(...)</code></td><td>Python entry point for <code>src/lint.rs</code>.</td></tr>
-              <tr><td><code>Unit</code>, <code>UnitValue</code></td><td><code>PyUnit</code>, <code>PyUnitValue</code></td><td>Python unit operator support.</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <h3>Binding rules</h3>
+        <p><code>src/python.rs</code> defines the public Python API. The package wrapper in <code>python/pyspice_rs/__init__.py</code> re-exports the native extension.</p>
         <ul>
-          <li>Keep Python signatures explicit with <code>#[pyo3(signature = ...)]</code> so help text and errors stay predictable.</li>
-          <li>Map Python errors to specific exceptions: <code>PyValueError</code> for bad user input, <code>PyKeyError</code> for missing elements/nodes, <code>PyRuntimeError</code> for simulator/backend failures.</li>
-          <li>Use <code>PyValueArg</code> for user values that can be floats or unit values.</li>
-          <li>When adding an API to <code>Circuit</code>, consider whether <code>Subcircuit</code> and <code>Testbench</code> need the same capability.</li>
+          <li>Use explicit <code>#[pyo3(signature = ...)]</code> annotations for user-facing methods.</li>
+          <li>Use <code>PyValueArg</code> for values that may be floats or unit values.</li>
+          <li>Raise <code>ValueError</code> for invalid input, <code>KeyError</code> for missing names, and <code>RuntimeError</code> for backend failures.</li>
+          <li>When adding a capability to <code>Circuit</code>, decide whether <code>Subcircuit</code> and <code>Testbench</code> need it too.</li>
         </ul>
       </section>
 
-      <section id="ir">
-        <h2>Intermediate Representation</h2>
-        <p>The IR in <code>src/ir/mod.rs</code> is the durable structured contract for backend-neutral circuits. It is serializable through Serde and mirrored by <code>schema/circuit-ir.schema.json</code>.</p>
-        <h3>Core IR types</h3>
+      <section id="ir-codegen">
+        <h2>IR and Codegen</h2>
+        <p>The IR in <code>src/ir/mod.rs</code> is the stable structured contract. Code generators turn it into dialect-specific text.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Type</th><th>Purpose</th></tr></thead>
+            <thead><tr><th>File</th><th>Emits</th></tr></thead>
             <tbody>
-              <tr><td><code>CircuitIR</code></td><td>Complete simulation document: top subcircuit, optional testbench, subcircuit definitions, model libraries.</td></tr>
-              <tr><td><code>Subcircuit</code></td><td>Named reusable circuit fragment with ports, parameters, components, instances, models, includes, libs, OSDI loads, and Verilog blocks.</td></tr>
-              <tr><td><code>Component</code></td><td>Tagged union for passive, source, semiconductor, switch, transmission line, XSPICE, and raw SPICE elements.</td></tr>
-              <tr><td><code>IrValue</code></td><td>Numeric, expression, or raw value.</td></tr>
-              <tr><td><code>IrWaveform</code></td><td>Sin, pulse, PWL, exponential, SFFM, and AM source waveforms.</td></tr>
-              <tr><td><code>Testbench</code></td><td>DUT name, stimulus, analyses, options, saves, measures, temperature, initial conditions, node sets, step params, and extra lines.</td></tr>
-              <tr><td><code>Analysis</code></td><td>Tagged union covering standard, RF, statistical, Xyce-specific, and Spectre-specific analyses.</td></tr>
+              <tr><td><code>src/codegen/spice3.rs</code></td><td>ngspice, Xyce, and LTspice-style decks.</td></tr>
+              <tr><td><code>src/codegen/spectre.rs</code></td><td>Native Spectre syntax.</td></tr>
+              <tr><td><code>src/codegen/vacask.rs</code></td><td>VacaSk syntax.</td></tr>
             </tbody>
           </table>
         </div>
-        <h3>When changing the IR</h3>
-        <ol>
-          <li>Update <code>src/ir/mod.rs</code> and keep defaults backward compatible where practical.</li>
-          <li>Update schema files under <code>schema/</code>.</li>
-          <li>Update code generators for every backend that can represent the feature.</li>
-          <li>Update Python conversion code in <code>src/python.rs</code>.</li>
-          <li>Add Rust codegen tests and Python tests that serialize or emit the new field.</li>
-        </ol>
-      </section>
-
-      <section id="codegen">
-        <h2>Code Generation</h2>
-        <p>The <code>CodeGen</code> trait turns <code>CircuitIR</code> into backend-specific netlist text. Existing implementations include SPICE3 dialects, Spectre, and VacaSk.</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
-            <tbody>
-              <tr><td><code>src/codegen/spice3.rs</code></td><td>SPICE3-style emission for ngspice, Xyce, and LTspice dialects.</td></tr>
-              <tr><td><code>src/codegen/spectre.rs</code></td><td>Native Spectre syntax emission.</td></tr>
-              <tr><td><code>src/codegen/vacask.rs</code></td><td>VacaSk-oriented syntax emission.</td></tr>
-              <tr><td><code>src/codegen/mod.rs</code></td><td>Trait and shared entry points.</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p>Prefer adding syntax decisions to the relevant code generator. Backend subprocess drivers should focus on invocation, temporary files, output paths, and parsing, not on semantic rewrites.</p>
+        <p>When changing the IR, update the schema, Python conversion code, code generators, and tests together.</p>
       </section>
 
       <section id="backends">
-        <h2>Backend System</h2>
-        <p><code>src/backend/mod.rs</code> defines the <code>Backend</code> trait, <code>BackendKind</code>, capability flags, analysis routing, feature-aware selection, and backend construction.</p>
-        <h3>Backend trait</h3>
-        <pre><code class="language-rust">pub trait Backend: Send + Sync {
-    fn name(&self) -> &str;
-    fn run(&self, netlist: &str) -> Result&lt;RawData, BackendError&gt;;
-    fn capabilities(&self) -> BackendCapabilities;
-    fn codegen(&self) -> Box&lt;dyn CodeGen&gt;;
-    fn run_netlist(&self, netlist: &str) -> Result&lt;RawData, BackendError&gt;;
-}</code></pre>
-        <h3>Capability filtering</h3>
-        <p><code>CircuitFeatures</code> captures hard constraints: XSPICE, OSDI, measurements, step parameters, control blocks, Laplace sources, Verilog co-simulation, and element count. Auto-selection filters unavailable or incompatible backends before applying analysis preferences.</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Feature</th><th>Why it matters</th></tr></thead>
-            <tbody>
-              <tr><td><code>has_xspice</code></td><td>Only ngspice supports XSPICE A-elements.</td></tr>
-              <tr><td><code>has_osdi</code></td><td>Requires backends that can load compiled Verilog-A/OSDI models.</td></tr>
-              <tr><td><code>has_measures</code></td><td>Limits selection to backends with measurement support.</td></tr>
-              <tr><td><code>has_step_params</code></td><td>Limits selection to backends with step/sweep parameter support.</td></tr>
-              <tr><td><code>has_control_blocks</code></td><td>Only ngspice supports <code>.control</code> blocks in this project.</td></tr>
-              <tr><td><code>has_laplace_sources</code></td><td>Laplace B-source support is backend-specific.</td></tr>
-              <tr><td><code>has_verilog_cosim</code></td><td>Routes to backends with digital co-simulation support.</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <h3>Adding a backend</h3>
-        <ol>
-          <li>Create a module in <code>src/backend/</code> implementing <code>Backend</code>.</li>
-          <li>Add a <code>BackendKind</code> variant, <code>from_str</code> aliases, <code>display_name</code>, and capabilities.</li>
-          <li>Implement or select a <code>CodeGen</code> for the backend.</li>
-          <li>Update detection in <code>src/backend/detect.rs</code>.</li>
-          <li>Add analysis routing preferences if the backend should be preferred for specific analysis types.</li>
-          <li>Add tests in <code>tests/test_backends.rs</code>, <code>tests/test_codegen.rs</code>, and Python tests if the backend is user-visible.</li>
-          <li>Update user and developer documentation.</li>
-        </ol>
+        <h2>Backends</h2>
+        <p>Backends implement invocation and capability reporting. The code generator owns netlist syntax; the backend driver owns executable discovery, subprocess/shared-library calls, output files, and parser selection.</p>
+        <p>Auto-selection filters backends by required features such as XSPICE, OSDI, measurements, step parameters, control blocks, Laplace sources, and Verilog co-simulation.</p>
       </section>
 
       <section id="results">
-        <h2>Result Parsing</h2>
+        <h2>Results</h2>
         <p>Simulator output is normalized into result structs in <code>src/result.rs</code>. Rawfile parsing lives in <code>src/rawfile.rs</code>; Spectre PSF support lives in <code>src/psf.rs</code>.</p>
-        <h3>Common result pattern</h3>
-        <ul>
-          <li><code>RawData</code> stores title, plot name, variable metadata, real/complex data, and parsed measurements.</li>
-          <li>Analysis-specific structs such as <code>OperatingPoint</code>, <code>DcAnalysis</code>, <code>AcAnalysis</code>, and <code>TransientAnalysis</code> project raw data into ergonomic fields.</li>
-          <li>Python wrappers expose <code>__getitem__</code>, axis properties such as <code>time</code>/<code>frequency</code>/<code>sweep</code>, and <code>measures</code>.</li>
-        </ul>
-        <p>When adding result fields, update both Rust structs and Python wrappers. Add parser fixtures for backend-specific output quirks rather than assuming all simulators emit identical raw data.</p>
+        <p>When adding parser behavior, add fixtures for backend-specific formats. Do not assume every simulator names variables or measurements the same way.</p>
       </section>
 
-      <section id="linting">
-        <h2>Linting</h2>
-        <p><code>src/lint.rs</code> provides static netlist checks used through the Python <code>lint()</code> function. The current test suite covers missing <code>.end</code>, missing ground, duplicates, floating nodes, zero values, missing models, undefined parameters, and backend-specific diagnostics.</p>
-        <p>New lint rules should return structured warning/error maps with stable fields so Python consumers can rely on them. Favor warning-level diagnostics for portability hazards and error-level diagnostics for conditions that are very likely to fail everywhere.</p>
-      </section>
-
-      <section id="testbenches">
-        <h2>Testbench Helpers</h2>
-        <p>The Python package <code>testbenches</code> is intentionally a thin recipe layer over <code>pyspice_rs.Testbench</code>, not a separate simulator framework.</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>File</th><th>Purpose</th></tr></thead>
-            <tbody>
-              <tr><td><code>python/testbenches/design.py</code></td><td>Domain recipes returning <code>DesignBench</code> objects.</td></tr>
-              <tr><td><code>python/testbenches/analysis.py</code></td><td>Validation rules, metric reducers, corner evaluation, Monte Carlo plan emission, and scalar result parsers.</td></tr>
-              <tr><td><code>python/testbenches/__init__.py</code></td><td>Public exports for users.</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <h3>Recipe contract</h3>
-        <ul>
-          <li>Return a <code>DesignBench</code> with <code>name</code>, <code>category</code>, <code>testbench</code>, <code>intent</code>, <code>measurements</code>, <code>result_fields</code>, and <code>validation</code>.</li>
-          <li>Use ordinary <code>Testbench</code> stimulus calls such as <code>V</code>, <code>I</code>, waveform sources, <code>R</code>, and <code>C</code>.</li>
-          <li>Save every signal the validation layer needs.</li>
-          <li>Keep backend-specific behavior explicit through analysis methods, extra lines, <code>CornerCase</code>, or <code>MonteCarloPlan</code>.</li>
-          <li>Add tests that assert emitted netlists and serialized IR, not just object construction.</li>
-        </ul>
-      </section>
-
-      <section id="cabi">
-        <h2>C ABI</h2>
-        <p>The crate can be built with a C ABI for direct integration from C, C++, Zig, or other FFI consumers.</p>
-        <pre><code class="language-bash">cargo build --release --features cabi --no-default-features</code></pre>
-        <p>The <code>cabi</code> feature avoids the default Python feature set. Keep ABI changes conservative: exported symbol names, ownership rules, allocation/free pairing, and error reporting become external contracts once consumers link against them.</p>
-      </section>
-
-      <section id="testing">
-        <h2>Testing</h2>
-        <h3>Rust tests</h3>
-        <pre><code class="language-bash">cargo test</code></pre>
-        <p>Rust tests cover unit formatting, circuit display, code generation, backend selection/run-path behavior, simulation construction, and raw/result parsing.</p>
-        <h3>Python tests</h3>
-        <pre><code class="language-bash">maturin develop
+      <section id="tests">
+        <h2>Tests</h2>
+        <p>Rust tests cover formatting, codegen, backend selection, simulation setup, and parsers. Python tests cover the public API, examples, linting, units, subcircuits, and testbenches.</p>
+        <pre><code class="language-bash">cargo test
+maturin develop
 python3 -m pytest -v</code></pre>
-        <p>Python tests cover the PyO3 API, units, circuits, netlists, examples, linting, subcircuits, testbenches, and design validation helpers. Example tests execute every script under <code>examples/</code>.</p>
-        <h3>Focused test selection</h3>
-        <pre><code class="language-bash">python3 -m pytest tests/test_python_circuit.py -v
-python3 -m pytest tests/test_design_testbenches.py -v
-cargo test test_codegen</code></pre>
-        <div class="callout warning">
-          <p><strong>Simulator availability:</strong> Avoid making default tests require commercial or optional simulators unless the test can detect absence and skip cleanly. Netlist emission and parser fixture tests are usually better for CI portability.</p>
-        </div>
+        <p>Keep optional or commercial simulator tests skippable. For CI-friendly coverage, prefer netlist emission tests and parser fixtures.</p>
       </section>
 
-      <section id="adding-features">
-        <h2>Adding Features</h2>
-        <h3>Adding a circuit element</h3>
+      <section id="changes">
+        <h2>Change Checklists</h2>
+        <h3>Add a circuit element</h3>
         <ol>
-          <li>Add the Rust element struct and <code>Element</code> variant in <code>src/circuit.rs</code>.</li>
-          <li>Implement <code>fmt::Display</code> for legacy netlist output.</li>
-          <li>Add an IR <code>Component</code> variant if the element should work in structured testbenches.</li>
-          <li>Update code generators for SPICE3, Spectre, and VacaSk as applicable.</li>
-          <li>Add PyO3 methods on <code>Circuit</code>, <code>Subcircuit</code>, and <code>Testbench</code> where appropriate.</li>
-          <li>Update feature detection if the element constrains backend choice.</li>
-          <li>Add tests for netlist output, IR serialization, backend-specific emission, and Python usage.</li>
+          <li>Add the Rust element and display output in <code>src/circuit.rs</code>.</li>
+          <li>Add an IR component if structured testbenches should support it.</li>
+          <li>Update every relevant code generator.</li>
+          <li>Expose the API in <code>src/python.rs</code>.</li>
+          <li>Update feature detection if backend choice is affected.</li>
+          <li>Add Rust and Python tests.</li>
         </ol>
-        <h3>Adding an analysis</h3>
+        <h3>Add an analysis</h3>
         <ol>
-          <li>Add the Rust method in <code>src/simulation.rs</code>.</li>
-          <li>Add an IR <code>Analysis</code> variant and <code>kind_str()</code> mapping.</li>
-          <li>Update codegen emission for testbenches.</li>
-          <li>Update backend analysis preference routing.</li>
-          <li>Create or reuse a result type in <code>src/result.rs</code>.</li>
-          <li>Expose the method in <code>src/python.rs</code> on <code>CircuitSimulator</code> and <code>Testbench</code>.</li>
-          <li>Add tests and documentation examples.</li>
+          <li>Add the simulation method in <code>src/simulation.rs</code>.</li>
+          <li>Add an IR analysis variant if testbenches need it.</li>
+          <li>Update codegen and backend routing.</li>
+          <li>Add or reuse a result type.</li>
+          <li>Expose the method in Python.</li>
+          <li>Add tests and an example if the workflow is new.</li>
         </ol>
-        <h3>Adding a testbench recipe</h3>
+        <h3>Add a backend</h3>
         <ol>
-          <li>Add a recipe to <code>python/testbenches/design.py</code>.</li>
-          <li>Export it from <code>python/testbenches/__init__.py</code>.</li>
-          <li>Add tests asserting generated netlists, metadata, saved signals, measurements, and serialized IR.</li>
-          <li>Add an example if it demonstrates a new workflow category.</li>
-          <li>Document the recipe in the user guide.</li>
+          <li>Add a module under <code>src/backend/</code>.</li>
+          <li>Add <code>BackendKind</code> aliases, display name, and capabilities.</li>
+          <li>Select or implement a code generator.</li>
+          <li>Update detection.</li>
+          <li>Add backend, codegen, and Python coverage.</li>
         </ol>
       </section>
 
       <section id="docs">
-        <h2>Documentation Hosting</h2>
-        <p>Documentation is now plain static HTML under <code>docs/</code>. GitHub Pages uploads that directory directly; there is no mdBook build step.</p>
-        <h3>Editing docs</h3>
+        <h2>Docs</h2>
+        <p>The docs are plain static HTML. There is no docs build step.</p>
         <ul>
-          <li><code>docs/index.html</code> is the audience gateway.</li>
-          <li><code>docs/users.html</code> is the public user manual.</li>
-          <li><code>docs/developers.html</code> is the maintainer and contributor manual.</li>
-          <li><code>docs/styles.css</code> contains shared visual styling.</li>
+          <li><code>docs/index.html</code>: minimal entry point.</li>
+          <li><code>docs/users.html</code>: public user guide.</li>
+          <li><code>docs/developers.html</code>: maintainer notes.</li>
+          <li><code>docs/styles.css</code>: shared styling.</li>
         </ul>
-        <h3>Publishing workflow</h3>
-        <p>The GitHub Actions workflow at <code>.github/workflows/docs.yaml</code> runs on pushes to <code>main</code> that touch <code>docs/**</code> or the workflow file, uploads <code>docs/</code> as the Pages artifact, and deploys it with <code>actions/deploy-pages</code>.</p>
       </section>
     </main>
   </div>
 
   <footer class="footer">
-    DeSpice developer documentation. For API usage, see <a href="users.html">User docs</a>.
+    For public API usage, see <a href="users.html">User guide</a>.
   </footer>
 </body>
 </html>
