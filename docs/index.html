@@ -1,51 +1,107 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DeSpice Docs</title>
-  <link rel="stylesheet" href="styles.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeSpice — Python circuit simulation</title>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="site-header">
-    <nav class="nav" aria-label="Primary">
-      <a class="brand" href="index.html">DeSpice</a>
-      <div class="nav-links">
-        <a href="users.html">User guide</a>
-        <a href="developers.html">Developer notes</a>
-      </div>
-    </nav>
-  </header>
+<nav class="topnav">
+  <a class="brand" href="index.html">DeSpice</a>
+  <a class="active" href="index.html">Home</a>
+  <a href="guide.html">User Guide</a>
+  <a href="reference.html">API Reference</a>
+  <a href="examples.html">Examples</a>
+</nav>
+<main>
 
-  <main class="page">
-    <section class="intro">
-      <p class="eyebrow">pyspice-rs</p>
-      <h1>Python tools for building and running SPICE circuits.</h1>
-      <p>DeSpice lets you describe circuits in Python, emit SPICE netlists, run simulator backends, and read results back into Python.</p>
-    </section>
+<h1>DeSpice</h1>
+<p class="lead">
+A Python library for building SPICE circuits, generating netlists, running
+simulator backends, and reading results — with a PySpice-compatible API and
+a Rust core. The package is named <code>pyspice-rs</code> and imported as
+<code>pyspice_rs</code>.
+</p>
 
-    <section>
-      <h2>Start Here</h2>
-      <ol class="link-list">
-        <li><a href="users.html#install">Install the package</a></li>
-        <li><a href="users.html#first-circuit">Build a first circuit</a></li>
-        <li><a href="users.html#simulate">Run a simulation</a></li>
-        <li><a href="users.html#results">Read results</a></li>
-        <li><a href="users.html#next">Choose what to learn next</a></li>
-      </ol>
-    </section>
+<div class="cards">
+  <div class="card">
+    <h3><a href="guide.html">User Guide</a></h3>
+    <p>Install, build circuits, run analyses, read results, swap backends and PDKs.</p>
+  </div>
+  <div class="card">
+    <h3><a href="reference.html">API Reference</a></h3>
+    <p>Every class, element method, analysis, and result type with exact signatures.</p>
+  </div>
+  <div class="card">
+    <h3><a href="examples.html">Examples</a></h3>
+    <p>22 executable scripts from a voltage divider to PDK hot-swapping and design testbenches.</p>
+  </div>
+</div>
 
-    <section>
-      <h2>Reference</h2>
-      <ul class="link-list">
-        <li><a href="users.html">User guide</a> for the Python API, examples, backends, linting, and testbenches.</li>
-        <li><a href="developers.html">Developer notes</a> for repo layout, architecture, tests, and contribution workflow.</li>
-      </ul>
-    </section>
-  </main>
+<h2>Installation</h2>
+<pre><code>python3 -m venv .venv
+source .venv/bin/activate
+pip install maturin numpy pytest
+maturin develop</code></pre>
+<p>With Nix:</p>
+<pre><code>nix develop</code></pre>
+<p>
+Install at least one simulator to run analyses. Start with
+<code>ngspice</code> unless you need a specific backend. DeSpice supports
+<code>ngspice</code>, <code>xyce</code>, <code>ltspice</code>,
+<code>spectre</code>, and <code>vacask</code>; backend availability depends
+on what is installed locally.
+</p>
 
-  <footer class="footer">
-    Static docs served from <code>docs/</code>.
-  </footer>
+<h2>First circuit</h2>
+<p>The recommended workflow separates the design under test
+(<code>Subcircuit</code>) from its stimulus and measurement harness
+(<code>Testbench</code>):</p>
+<pre><code>import pyspice_rs as ps
+from pyspice_rs.unit import u_V, u_kOhm
+
+# Design under test: a resistive divider with two ports
+dut = ps.Subcircuit("divider", ["vin", "vout"])
+dut.R(name="top", positive="vin", negative="vout", value=2 @ u_kOhm)
+dut.R(name="bot", positive="vout", negative=dut.gnd, value=1 @ u_kOhm)
+
+# Testbench: stimulus + backend + analysis
+tb = ps.Testbench(dut)
+tb.V(name="supply", positive="vin", negative=dut.gnd, value=10 @ u_V)
+tb.with_backend("ngspice")
+
+op = tb.operating_point()
+print(op["vout"])   # ≈ 3.333 V</code></pre>
+
+<p>A flat <code>Circuit</code> works too, closer to classic PySpice:</p>
+<pre><code>circuit = ps.Circuit("voltage_divider")
+circuit.V(name="in", positive="vin", negative=circuit.gnd, value=10 @ u_V)
+circuit.R(name="top", positive="vin", negative="vout", value=2 @ u_kOhm)
+circuit.R(name="bot", positive="vout", negative=circuit.gnd, value=1 @ u_kOhm)
+
+print(circuit)  # netlist
+
+sim = circuit.simulator(simulator="ngspice")
+op = sim.operating_point()
+print(op["vout"])</code></pre>
+
+<h2>Highlights</h2>
+<ul>
+  <li><strong>PySpice-compatible API</strong> — <code>value @ u_kOhm</code> units (Unicode aliases like <code>u_µF</code>, <code>u_Ω</code> included), familiar element and analysis names, <code>.nodes</code>/<code>.branches</code> on results.</li>
+  <li><strong>Backend hot-swap</strong> — one line (<code>tb.with_backend("vacask")</code>) switches simulators; netlists are generated per backend dialect.</li>
+  <li><strong>PDK hot-swap</strong> — <code>ModelLibrary</code> + <code>tb.use_pdk()</code> swap foundry models (sky130, gf180mcu, …) without touching topology.</li>
+  <li><strong>Full analysis set</strong> — OP, DC, AC, transient, noise, transfer function, sensitivity, pole-zero, distortion, PSS, S-parameters, harmonic balance, stability, Monte Carlo / sampling, FFT.</li>
+  <li><strong>Verilog-A and digital co-simulation</strong> — compile Verilog-A inline via OpenVAF/OSDI; bridge digital Verilog with XSPICE A-elements.</li>
+  <li><strong>Linting</strong> — validate netlists and check backend compatibility before simulating.</li>
+</ul>
+
+<h2>Testing your install</h2>
+<pre><code>cargo test
+maturin develop
+python3 -m pytest -v</code></pre>
+
+</main>
+<footer>DeSpice documentation — generated from the source in <code>src/</code> and <code>examples/</code>.</footer>
 </body>
 </html>

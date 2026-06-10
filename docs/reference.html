@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Reference — DeSpice</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<nav class="topnav">
+  <a class="brand" href="index.html">DeSpice</a>
+  <a href="index.html">Home</a>
+  <a href="guide.html">User Guide</a>
+  <a class="active" href="reference.html">API Reference</a>
+  <a href="examples.html">Examples</a>
+</nav>
+<main>
+
+<h1>API Reference</h1>
+<p class="lead">Import as <code>import pyspice_rs as ps</code>; units from
+<code>pyspice_rs.unit</code>. All element/analysis arguments are
+keyword-only unless noted.</p>
+
+<div class="toc">
+<strong>Contents</strong>
+<ul>
+  <li><a href="#circuit">Circuit / Subcircuit</a></li>
+  <li><a href="#elements">Element methods</a></li>
+  <li><a href="#directives">Directives</a></li>
+  <li><a href="#testbench">Testbench</a></li>
+  <li><a href="#simulator">CircuitSimulator</a></li>
+  <li><a href="#analyses">Analysis methods</a></li>
+  <li><a href="#backend-analyses">Backend-specific analyses</a></li>
+  <li><a href="#results">Result types</a></li>
+  <li><a href="#units">Units</a></li>
+  <li><a href="#modellibrary">ModelLibrary</a></li>
+  <li><a href="#functions">Module functions</a></li>
+</ul>
+</div>
+
+<h2 id="circuit">Circuit / Subcircuit</h2>
+<table>
+<tr><th>Signature</th><th>Description</th></tr>
+<tr><td><code>Circuit(title: str)</code></td><td>Flat circuit. <code>str(circuit)</code> → netlist.</td></tr>
+<tr><td><code>Subcircuit(name: str, ports: list[str] = None, **params)</code></td><td>Reusable, nestable design block. Same element/directive methods as <code>Circuit</code>.</td></tr>
+<tr><td><code>.gnd</code></td><td>Ground node (<code>"0"</code>).</td></tr>
+<tr><td><code>.node(name) -> str</code></td><td>Node name passthrough.</td></tr>
+<tr><td><code>.element(name) -> str</code> / <code>circuit[name]</code></td><td>Retrieve an element's netlist line.</td></tr>
+<tr><td><code>.set_source_value(name, value)</code></td><td>Update a V/I source value after construction.</td></tr>
+<tr><td><code>.simulator(simulator: str = None) -> CircuitSimulator</code></td><td><code>Circuit</code> only. Auto-selects backend unless overridden.</td></tr>
+<tr><td><code>.subcircuit(subckt: Subcircuit)</code></td><td>Add a subcircuit definition.</td></tr>
+</table>
+
+<h2 id="elements">Element methods</h2>
+<p>Available on <code>Circuit</code>, <code>Subcircuit</code>, and (for
+stimulus) <code>Testbench</code>. <code>value</code> accepts a float or a
+<code>UnitValue</code> (<code>10 @ u_kOhm</code>).</p>
+<table>
+<tr><th>Method</th><th>SPICE</th><th>Signature</th></tr>
+<tr><td><code>R</code></td><td>R</td><td><code>(name, positive, negative, value, raw_spice=None)</code></td></tr>
+<tr><td><code>C</code></td><td>C</td><td><code>(name, positive, negative, value)</code></td></tr>
+<tr><td><code>L</code></td><td>L</td><td><code>(name, positive, negative, value)</code></td></tr>
+<tr><td><code>K</code></td><td>K</td><td><code>(name, inductor1, inductor2, coupling)</code></td></tr>
+<tr><td><code>V</code></td><td>V</td><td><code>(name, positive, negative, value, ac=None, ac_phase=None)</code></td></tr>
+<tr><td><code>I</code></td><td>I</td><td><code>(name, positive, negative, value, ac=None, ac_phase=None)</code></td></tr>
+<tr><td><code>BV</code></td><td>B</td><td><code>(name, positive, negative, expression)</code> — behavioral voltage</td></tr>
+<tr><td><code>BI</code></td><td>B</td><td><code>(name, positive, negative, expression)</code> — behavioral current</td></tr>
+<tr><td><code>E</code></td><td>E</td><td><code>(name, positive, negative, control_positive, control_negative, voltage_gain)</code> — VCVS</td></tr>
+<tr><td><code>G</code></td><td>G</td><td><code>(name, positive, negative, control_positive, control_negative, transconductance)</code> — VCCS</td></tr>
+<tr><td><code>F</code></td><td>F</td><td><code>(name, positive, negative, vsense, current_gain)</code> — CCCS</td></tr>
+<tr><td><code>H</code></td><td>H</td><td><code>(name, positive, negative, vsense, transresistance)</code> — CCVS</td></tr>
+<tr><td><code>D</code></td><td>D</td><td><code>(name, anode, cathode, model)</code></td></tr>
+<tr><td><code>Q</code> / <code>BJT</code></td><td>Q</td><td><code>(name, collector, base, emitter, model)</code></td></tr>
+<tr><td><code>M</code> / <code>MOSFET</code></td><td>M</td><td><code>(name, drain, gate, source, bulk, model, **params)</code> — params e.g. <code>L=0.5, W=5</code></td></tr>
+<tr><td><code>J</code></td><td>J</td><td><code>(name, drain, gate, source, model)</code> — JFET</td></tr>
+<tr><td><code>Z</code></td><td>Z</td><td><code>(name, drain, gate, source, model)</code> — MESFET</td></tr>
+<tr><td><code>S</code></td><td>S</td><td><code>(name, positive, negative, control_positive, control_negative, model)</code> — V-controlled switch</td></tr>
+<tr><td><code>W</code></td><td>W</td><td><code>(name, positive, negative, vcontrol, model)</code> — I-controlled switch</td></tr>
+<tr><td><code>T</code></td><td>T</td><td><code>(name, input_positive, input_negative, output_positive, output_negative, Z0, TD)</code></td></tr>
+<tr><td><code>X</code></td><td>X</td><td><code>(name, subcircuit_name, *nodes)</code> — positional</td></tr>
+<tr><td><code>A</code></td><td>A</td><td><code>(name, connections: list[str], model)</code> — XSPICE code model</td></tr>
+</table>
+
+<h3>Waveform source builders</h3>
+<table>
+<tr><th>Method</th><th>Signature</th></tr>
+<tr><td><code>SinusoidalVoltageSource</code> / <code>SinusoidalCurrentSource</code></td>
+<td><code>(name, positive, negative, dc_offset=0.0, offset=0.0, amplitude=1.0, frequency=1000.0)</code></td></tr>
+<tr><td><code>PulseVoltageSource</code> / <code>PulseCurrentSource</code></td>
+<td><code>(name, positive, negative, initial_value=0.0, pulsed_value=1.0, pulse_width=50e-9, period=100e-9, rise_time=1e-9, fall_time=1e-9)</code></td></tr>
+<tr><td><code>PieceWiseLinearVoltageSource</code></td>
+<td><code>(name, positive, negative, values: list[tuple[float, float]])</code> — (time, value) pairs</td></tr>
+</table>
+
+<h3>Verilog / HDL</h3>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>.veriloga(source_or_path) -> str</code></td><td>Compile Verilog-A (inline string or <code>.va</code> path) to OSDI; returns the <code>.osdi</code> path. Requires <code>openvaf</code>.</td></tr>
+<tr><td><code>.osdi(path)</code></td><td>Load a pre-compiled OSDI binary.</td></tr>
+<tr><td><code>.verilog(source, mode="simulate"|"synthesize", instance_name, connections: dict, pdk=None, liberty=None, spice_models=None)</code></td><td>Wire a digital Verilog module via co-simulation or synthesis.</td></tr>
+</table>
+
+<h2 id="directives">Directives</h2>
+<table>
+<tr><th>Method</th><th>Emits</th></tr>
+<tr><td><code>.model(name, kind, **params)</code></td><td><code>.model</code></td></tr>
+<tr><td><code>.include(path)</code></td><td><code>.include</code></td></tr>
+<tr><td><code>.lib(path, section)</code></td><td><code>.lib</code></td></tr>
+<tr><td><code>.parameter(name, value)</code></td><td><code>.param</code></td></tr>
+<tr><td><code>.options(**kwargs)</code></td><td><code>.options</code></td></tr>
+<tr><td><code>.temp(temperature)</code></td><td><code>.temp</code></td></tr>
+<tr><td><code>.raw_spice(line)</code></td><td>verbatim netlist line</td></tr>
+</table>
+
+<h2 id="testbench">Testbench</h2>
+<table>
+<tr><th>Member</th><th>Description</th></tr>
+<tr><td><code>Testbench(dut: Subcircuit)</code></td><td>Wrap a DUT for simulation.</td></tr>
+<tr><td><code>.with_backend(name: str)</code></td><td>Select simulator backend.</td></tr>
+<tr><td><code>.add_subcircuit(subckt)</code></td><td>Register a subcircuit definition used by the DUT.</td></tr>
+<tr><td><code>.use_pdk(lib: ModelLibrary)</code></td><td>Attach a PDK model library.</td></tr>
+<tr><td><code>.check_backend(name) -> list[str]</code></td><td>Compatibility issues for a backend.</td></tr>
+<tr><td>stimulus methods</td><td>All element methods above (V, I, waveform builders, …).</td></tr>
+<tr><td>config methods</td><td>Same as <code>CircuitSimulator</code> below.</td></tr>
+<tr><td>analysis methods</td><td>Same as <code>CircuitSimulator</code> below.</td></tr>
+</table>
+
+<h2 id="simulator">CircuitSimulator</h2>
+<p>Created by <code>circuit.simulator(simulator=None)</code>.</p>
+<table>
+<tr><th>Member</th><th>Description</th></tr>
+<tr><td><code>CircuitSimulator.available_backends() -> list[str]</code></td><td>Static. Backends installed locally.</td></tr>
+<tr><td><code>.options(**kwargs)</code></td><td>Solver options (<code>RELTOL</code>, <code>ABSTOL</code>, <code>VNTOL</code>, <code>GMIN</code>, …).</td></tr>
+<tr><td><code>.initial_condition(**node_values)</code></td><td><code>.ic</code></td></tr>
+<tr><td><code>.node_set(**node_values)</code></td><td><code>.nodeset</code></td></tr>
+<tr><td><code>.save(*signals)</code></td><td>Explicit save list, e.g. <code>"V(out)"</code>, <code>"I(Vdd)"</code>.</td></tr>
+<tr><td><code>.save_currents = bool</code></td><td>Save all branch currents.</td></tr>
+<tr><td><code>.measure(*parts)</code></td><td><code>.meas</code>, e.g. <code>("TRAN", "v_peak", "MAX", "V(out)")</code>.</td></tr>
+<tr><td><code>.temperature = float</code> / <code>.nominal_temperature = float</code></td><td><code>.temp</code> / <code>tnom</code>.</td></tr>
+<tr><td><code>.step(param, start, stop, step)</code></td><td>Linear <code>.step</code>.</td></tr>
+<tr><td><code>.step_sweep(param, start, stop, step, sweep_type)</code></td><td><code>"lin" | "oct" | "dec"</code>.</td></tr>
+<tr><td><code>.check_backend(name) -> list[str]</code></td><td>Compatibility issues.</td></tr>
+</table>
+
+<h2 id="analyses">Analysis methods</h2>
+<p>On both <code>Testbench</code> and <code>CircuitSimulator</code>.</p>
+<table>
+<tr><th>Method</th><th>Returns</th></tr>
+<tr><td><code>operating_point()</code></td><td><code>OperatingPoint</code></td></tr>
+<tr><td><code>dc(**{source: slice(start, stop, step)})</code></td><td><code>DcAnalysis</code></td></tr>
+<tr><td><code>ac(variation="dec", number_of_points=10, start_frequency=1.0, stop_frequency=1e9)</code></td><td><code>AcAnalysis</code></td></tr>
+<tr><td><code>transient(step_time, end_time, start_time=None, max_time=None, use_initial_condition=False)</code></td><td><code>TransientAnalysis</code></td></tr>
+<tr><td><code>noise(output_node, ref_node, src, variation="dec", points=10, start_frequency=1e3, stop_frequency=1e8, points_per_summary=None)</code></td><td><code>NoiseAnalysis</code></td></tr>
+<tr><td><code>transfer_function(outvar, insrc)</code> / <code>tf(...)</code></td><td><code>TransferFunctionAnalysis</code></td></tr>
+<tr><td><code>dc_sensitivity(output_variable)</code></td><td><code>SensitivityAnalysis</code></td></tr>
+<tr><td><code>ac_sensitivity(output_variable, variation="dec", number_of_points=10, start_frequency=100.0, stop_frequency=1e5)</code></td><td><code>SensitivityAnalysis</code></td></tr>
+<tr><td><code>polezero(node1, node2, node3, node4, tf_type, pz_type)</code></td><td><code>PoleZeroAnalysis</code></td></tr>
+<tr><td><code>distortion(variation="dec", points=10, start_frequency=100.0, stop_frequency=1e8, f2overf1=None)</code></td><td><code>DistortionAnalysis</code></td></tr>
+<tr><td><code>pss(fundamental_frequency, stabilization_time, observe_node, points_per_period=128, harmonics=10)</code></td><td><code>PssAnalysis</code></td></tr>
+<tr><td><code>s_param(variation="dec", number_of_points=10, start_frequency=1e6, stop_frequency=1e10)</code></td><td><code>SParamAnalysis</code></td></tr>
+<tr><td><code>harmonic_balance(fundamental_frequencies: list, num_harmonics=None)</code></td><td><code>HarmonicBalanceAnalysis</code></td></tr>
+<tr><td><code>stability(probe, variation="dec", number_of_points=10, start_frequency=1.0, stop_frequency=1e10)</code></td><td><code>StabilityAnalysis</code></td></tr>
+<tr><td><code>transient_noise(step_time, end_time)</code></td><td><code>TransientNoiseAnalysis</code></td></tr>
+<tr><td><code>network_params(output_current, input_source, z_in=50.0, z_out=50.0, variation="dec", points=100, start_freq=1e3, stop_freq=1e9)</code></td><td><code>SParamAnalysis</code></td></tr>
+</table>
+
+<h2 id="backend-analyses">Backend-specific analyses</h2>
+<h3>Spectre</h3>
+<table>
+<tr><th>Method</th><th>Returns</th></tr>
+<tr><td><code>spectre_sweep(param, start, stop, step, inner_analysis, inner_type="ac")</code></td><td><code>RawData</code></td></tr>
+<tr><td><code>spectre_montecarlo(num_iterations, inner_analysis, inner_type="ac", seed=None)</code></td><td><code>RawData</code></td></tr>
+<tr><td><code>spectre_pac(pss_fundamental, pss_stabilization, pss_harmonics=10, variation="dec", points=100, start_freq=1.0, stop_freq=1e9, sweep_type="relative")</code></td><td><code>AcAnalysis</code></td></tr>
+<tr><td><code>spectre_pnoise(pss_fundamental, pss_stabilization, pss_harmonics=10, output_node, ref_node, variation="dec", points=100, start_freq=1.0, stop_freq=1e9)</code></td><td><code>NoiseAnalysis</code></td></tr>
+<tr><td><code>spectre_pxf(pss_fundamental, pss_stabilization, pss_harmonics=10, output_node, source, variation="dec", points=100, start_freq=1.0, stop_freq=1e9)</code></td><td><code>AcAnalysis</code></td></tr>
+<tr><td><code>spectre_pstb(pss_fundamental, pss_stabilization, pss_harmonics=10, probe, variation="dec", points=100, start_freq=1.0, stop_freq=1e9)</code></td><td><code>StabilityAnalysis</code></td></tr>
+</table>
+<h3>Xyce</h3>
+<table>
+<tr><th>Method</th><th>Returns</th></tr>
+<tr><td><code>xyce_sampling(num_samples, param_distributions: list[tuple[str, str]])</code></td><td><code>SamplingAnalysis</code></td></tr>
+<tr><td><code>xyce_embedded_sampling(num_samples, param_distributions)</code></td><td><code>SamplingAnalysis</code></td></tr>
+<tr><td><code>xyce_pce(num_samples, param_distributions, expansion_order=3)</code></td><td><code>SamplingAnalysis</code></td></tr>
+<tr><td><code>xyce_fft(signal, np=1024, start=0.0, stop=1e-3, window="HANN", format="UNORM")</code></td><td><code>XyceFftAnalysis</code></td></tr>
+</table>
+<p>Distribution strings: <code>"normal(mean,stddev)"</code>,
+<code>"uniform(low,high)"</code>.</p>
+
+<h2 id="results">Result types</h2>
+<p>Common interface on every result: <code>res["name"]</code> /
+<code>res.name</code> → numpy array (float for <code>OperatingPoint</code>),
+<code>.nodes</code>, <code>.branches</code>, <code>.measures</code>
+(dict, name → float).</p>
+<table>
+<tr><th>Type</th><th>Extra members</th></tr>
+<tr><td><code>OperatingPoint</code></td><td>—</td></tr>
+<tr><td><code>DcAnalysis</code></td><td><code>.sweep</code> — sweep axis</td></tr>
+<tr><td><code>AcAnalysis</code></td><td><code>.frequency</code></td></tr>
+<tr><td><code>TransientAnalysis</code></td><td><code>.time</code></td></tr>
+<tr><td><code>NoiseAnalysis</code>, <code>TransferFunctionAnalysis</code>, <code>SensitivityAnalysis</code></td><td>—</td></tr>
+<tr><td><code>PoleZeroAnalysis</code></td><td><code>.poles</code>, <code>.zeros</code></td></tr>
+<tr><td><code>DistortionAnalysis</code></td><td><code>.frequency</code></td></tr>
+<tr><td><code>PssAnalysis</code>, <code>SParamAnalysis</code>, <code>HarmonicBalanceAnalysis</code>, <code>StabilityAnalysis</code>, <code>TransientNoiseAnalysis</code></td><td><code>.frequency</code> or <code>.time</code> axis</td></tr>
+<tr><td><code>SamplingAnalysis</code></td><td>—</td></tr>
+<tr><td><code>XyceFftAnalysis</code></td><td><code>.frequency</code>, <code>.magnitude</code>, <code>.phase</code>, <code>.enob</code>, <code>.sfdr_db</code>, <code>.snr_db</code>, <code>.thd_db</code></td></tr>
+<tr><td><code>RawData</code></td><td><code>.title</code>, <code>.plot_name</code>, <code>.is_complex</code>, <code>.variable_names</code></td></tr>
+</table>
+
+<h2 id="units">Units</h2>
+<table>
+<tr><th>Quantity</th><th>Constants</th></tr>
+<tr><td>Voltage</td><td><code>u_V, u_mV, u_uV</code> (<code>u_µV</code>)</td></tr>
+<tr><td>Current</td><td><code>u_A, u_mA, u_uA, u_nA</code> (<code>u_µA</code>)</td></tr>
+<tr><td>Resistance</td><td><code>u_Ohm, u_kOhm, u_MOhm</code> (<code>u_Ω, u_kΩ, u_MΩ</code>)</td></tr>
+<tr><td>Capacitance</td><td><code>u_F, u_mF, u_uF, u_nF, u_pF, u_fF</code> (<code>u_µF</code>)</td></tr>
+<tr><td>Inductance</td><td><code>u_H, u_mH, u_uH, u_nH</code> (<code>u_µH</code>)</td></tr>
+<tr><td>Frequency</td><td><code>u_Hz, u_kHz, u_MHz, u_GHz</code></td></tr>
+<tr><td>Time</td><td><code>u_s, u_ms, u_us, u_ns, u_ps</code> (<code>u_µs</code>)</td></tr>
+<tr><td>Power</td><td><code>u_W, u_mW, u_uW</code> (<code>u_µW</code>)</td></tr>
+<tr><td>Temperature</td><td><code>u_Degree</code></td></tr>
+</table>
+<p><code>UnitValue</code> (from <code>value @ unit</code>):
+<code>.value</code> → SI float, <code>.str_spice()</code> → netlist suffix
+form (<code>"10k"</code>), <code>float(uv)</code> works.</p>
+
+<h2 id="modellibrary">ModelLibrary</h2>
+<pre><code>ModelLibrary(path: str, corner: str = None,
+             setup_includes: list[str] = None, **backend_paths)</code></pre>
+<p>Properties: <code>.name</code>, <code>.path</code>, <code>.corner</code>.
+Per-backend keyword paths let one object map to different model files per
+simulator. Attach with <code>tb.use_pdk(lib)</code>.</p>
+
+<h2 id="functions">Module functions</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>lint(netlist: str, backend=None) -> dict</code></td>
+<td><code>{"errors": [{"line", "message"}], "warnings": [{"line", "message", "suggestion", "backends_affected"}]}</code></td></tr>
+<tr><td><code>compile_veriloga(source_or_path: str) -> str</code></td>
+<td>Compile Verilog-A to an OSDI binary; returns its path. Requires <code>openvaf</code>.</td></tr>
+</table>
+
+</main>
+<footer>DeSpice documentation — generated from the source in <code>src/</code> and <code>examples/</code>.</footer>
+</body>
+</html>

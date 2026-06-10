@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examples — DeSpice</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<nav class="topnav">
+  <a class="brand" href="index.html">DeSpice</a>
+  <a href="index.html">Home</a>
+  <a href="guide.html">User Guide</a>
+  <a href="reference.html">API Reference</a>
+  <a class="active" href="examples.html">Examples</a>
+</nav>
+<main>
+
+<h1>Examples</h1>
+<p class="lead">22 executable scripts in <code>examples/</code>, ordered
+from basic circuits to backend and testbench workflows. Run any with
+<code>python examples/&lt;name&gt;.py</code> (ngspice installed).</p>
+
+<h2>Basics</h2>
+<table>
+<tr><th>Script</th><th>Demonstrates</th><th>Key API</th></tr>
+<tr><td><code>01_voltage_divider.py</code></td><td>Resistive divider, DC operating point</td><td><code>Subcircuit</code>, <code>Testbench</code>, <code>R</code>, <code>V</code>, <code>operating_point()</code></td></tr>
+<tr><td><code>02_rc_lowpass.py</code></td><td>RC filter: AC frequency response + transient step</td><td><code>ac()</code>, <code>transient()</code>, <code>ac.frequency</code>, <code>tran.time</code>, <code>PulseVoltageSource</code></td></tr>
+<tr><td><code>03_rlc_bandpass.py</code></td><td>RLC bandpass with coupled inductors (transformer)</td><td><code>L</code>, <code>K</code>, <code>C</code>, peak finding on numpy results</td></tr>
+<tr><td><code>04_bjt_amplifier.py</code></td><td>Common-emitter BJT amp with divider bias</td><td><code>model()</code>, <code>Q</code>, coupling/bypass caps</td></tr>
+<tr><td><code>05_cmos_inverter.py</code></td><td>CMOS inverter transient switching</td><td>NMOS/PMOS <code>model()</code>, <code>M</code>, <code>PulseVoltageSource</code></td></tr>
+<tr><td><code>06_opamp_inverting.py</code></td><td>Ideal opamp via behavioral source</td><td><code>BV</code> with expression <code>"1e6 * (V(inp) - V(inn))"</code></td></tr>
+<tr><td><code>07_diode_rectifier.py</code></td><td>Full-bridge rectifier + filter cap</td><td>diode <code>model()</code>, <code>D</code>, <code>SinusoidalVoltageSource</code></td></tr>
+<tr><td><code>08_differential_pair.py</code></td><td>MOSFET diff pair with tail current</td><td><code>M</code> ×2, <code>I</code>, differential OP measurement</td></tr>
+</table>
+
+<h2>Elements tour</h2>
+<table>
+<tr><th>Script</th><th>Demonstrates</th><th>Key API</th></tr>
+<tr><td><code>09_controlled_sources.py</code></td><td>All four controlled sources</td><td><code>E</code> (VCVS), <code>G</code> (VCCS), <code>F</code> (CCCS), <code>H</code> (CCVS), 0 V sense source</td></tr>
+<tr><td><code>10_subcircuit.py</code></td><td>Hierarchy: define, nest, instantiate</td><td><code>X</code>, <code>tb.add_subcircuit()</code></td></tr>
+<tr><td><code>11_jfet_amplifier.py</code></td><td>JFET common-source amp, self-bias</td><td><code>J</code>, NJF <code>model()</code></td></tr>
+<tr><td><code>12_transmission_line.py</code></td><td>Lossless line, reflections</td><td><code>T</code> with <code>Z0</code>, <code>TD</code></td></tr>
+<tr><td><code>13_switches.py</code></td><td>V- and I-controlled switches with hysteresis</td><td><code>S</code>, <code>W</code>, SW/CSW <code>model()</code></td></tr>
+<tr><td><code>14_pwl_dac.py</code></td><td>3-bit DAC staircase from PWL source</td><td><code>PieceWiseLinearVoltageSource</code>, programmatic waveform</td></tr>
+</table>
+
+<h2>Workflow</h2>
+<table>
+<tr><th>Script</th><th>Demonstrates</th><th>Key API</th></tr>
+<tr><td><code>15_linting.py</code></td><td>Catching missing models / dangling nodes pre-sim</td><td><code>tb.check_backend(name)</code></td></tr>
+<tr><td><code>16_simulator_config.py</code></td><td>Full simulator configuration</td><td><code>temperature</code>, <code>options()</code>, <code>save()</code>, <code>measure()</code>, <code>step()</code>, <code>initial_condition()</code>, <code>node_set()</code></td></tr>
+<tr><td><code>17_veriloga_inline.py</code></td><td>Inline Verilog-A → OSDI compile + instantiate</td><td><code>veriloga()</code>, <code>raw_spice()</code>; needs <code>openvaf</code></td></tr>
+<tr><td><code>18_verilog_digital.py</code></td><td>Digital Verilog co-sim with XSPICE bridges</td><td><code>A</code>, adc/dac bridge <code>model()</code>; needs XSPICE + <code>iverilog</code></td></tr>
+</table>
+
+<h2>Hot-swapping</h2>
+<table>
+<tr><th>Script</th><th>Demonstrates</th><th>Key API</th></tr>
+<tr><td><code>19_backend_hotswap.py</code></td><td>Same circuit on ngspice and vacask</td><td><code>tb.with_backend(name)</code> in a loop</td></tr>
+<tr><td><code>20_pdk_hotswap.py</code></td><td>Swap PDKs (sky130, gf180mcu), same topology</td><td><code>ModelLibrary(path, corner=...)</code>, <code>tb.use_pdk()</code>; set <code>PDK_ROOT</code>, enable sims with <code>DESPICE_RUN_PDK_EXAMPLES=1</code></td></tr>
+<tr><td><code>21_combined_hotswap.py</code></td><td>Matrix sweep: PDKs × backends</td><td><code>ModelLibrary</code> with per-backend paths + <code>with_backend()</code></td></tr>
+<tr><td><code>22_design_testbenches.py</code></td><td>Reusable analog testbench recipes + validation</td><td><code>testbenches</code> module: <code>amplifier_voltage_gain</code>, <code>CornerCase</code>, <code>MetricSpec</code>, <code>extract_metrics</code>, <code>validate_metrics</code></td></tr>
+</table>
+
+<h2>Backend hot-swap in full</h2>
+<pre><code>import pyspice_rs as ps
+from pyspice_rs.unit import u_V, u_kOhm
+
+dut = ps.Subcircuit("divider", ["vin", "vout"])
+dut.R(name="top", positive="vin", negative="vout", value=2 @ u_kOhm)
+dut.R(name="bot", positive="vout", negative=dut.gnd, value=1 @ u_kOhm)
+
+for backend in ["ngspice", "vacask"]:
+    tb = ps.Testbench(dut)
+    tb.V(name="supply", positive="vin", negative=dut.gnd, value=10 @ u_V)
+    tb.with_backend(backend)          # the only line that changes
+    op = tb.operating_point()
+    print(backend, op["vout"])</code></pre>
+
+<h2>PDK hot-swap in full</h2>
+<pre><code>import os
+import pyspice_rs as ps
+
+PDK_ROOT = os.environ["PDK_ROOT"]
+
+PDKS = {
+    "sky130": {
+        "lib": f"{PDK_ROOT}/sky130A/libs.tech/ngspice/sky130.lib.spice",
+        "corner": "tt",
+        "nmos": "sky130_fd_pr__nfet_01v8",
+        "vdd": 1.8,
+    },
+    "gf180mcu": {
+        "lib": f"{PDK_ROOT}/gf180mcuD/libs.tech/ngspice/sm141064.ngspice",
+        "corner": "typical",
+        "nmos": "nfet_03v3",
+        "vdd": 3.3,
+    },
+}
+
+for name, cfg in PDKS.items():
+    dut = build_cs_amp(cfg["nmos"])           # same topology every time
+    lib = ps.ModelLibrary(cfg["lib"], corner=cfg["corner"])
+
+    tb = ps.Testbench(dut)
+    tb.use_pdk(lib)
+    tb.with_backend("ngspice")
+    op = tb.operating_point()</code></pre>
+
+</main>
+<footer>DeSpice documentation — generated from the source in <code>src/</code> and <code>examples/</code>.</footer>
+</body>
+</html>

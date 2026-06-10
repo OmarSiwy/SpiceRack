@@ -41,9 +41,9 @@ print(op["vout"])
 
 ## Docs
 
-- [User guide](docs/users.html): install, build circuits, simulate, read results, choose backends, lint, and use examples.
-- [Developer notes](docs/developers.html): repo layout, architecture, tests, and contribution checklists.
-- [Examples](examples/): executable scripts ordered from basic circuits to backend and testbench workflows.
+- [User guide](docs/guide.html): install, build circuits, simulate, read results, choose backends, lint, PDKs, Verilog-A.
+- [API reference](docs/reference.html): every class, element method, analysis, and result type.
+- [Examples](docs/examples.html): index of the executable scripts in [examples/](examples/), ordered from basic circuits to backend and testbench workflows.
 
 ## Test
 
