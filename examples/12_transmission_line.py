@@ -5,8 +5,8 @@ Example 12: Lossless Transmission Line
 Demonstrates T element. Pulse input shows reflections.
 Reflection coefficient = (Zl - Z0)/(Zl + Z0) = 0.333.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_Ohm
+import spicerack as ps
+from spicerack.unit import u_Ohm
 
 # ── DUT ──
 

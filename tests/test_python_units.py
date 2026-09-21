@@ -8,10 +8,10 @@ import pytest
 
 def import_units():
     try:
-        from pyspice_rs import unit
+        from spicerack import unit
         return unit
     except ImportError:
-        pytest.skip("pyspice_rs not built — run 'maturin develop' first")
+        pytest.skip("spicerack not built — run 'maturin develop' first")
 
 
 class TestUnitMatmul:

@@ -236,8 +236,8 @@ fn check_zero_value_components(lines: &[&str], result: &mut LintResult) {
         let line_num = idx + 1;
 
         match first_char {
-            'R' => {
-                if parts.len() >= 4 && is_zero_value(parts[3]) {
+            'R'
+                if parts.len() >= 4 && is_zero_value(parts[3]) => {
                     result.warnings.push(LintWarning {
                         line: line_num,
                         message: format!("Resistor '{}' has zero resistance", parts[0]),
@@ -245,9 +245,8 @@ fn check_zero_value_components(lines: &[&str], result: &mut LintResult) {
                         backends_affected: vec!["ngspice".to_string(), "xyce".to_string(), "ltspice".to_string()],
                     });
                 }
-            }
-            'C' => {
-                if parts.len() >= 4 && is_zero_value(parts[3]) {
+            'C'
+                if parts.len() >= 4 && is_zero_value(parts[3]) => {
                     result.warnings.push(LintWarning {
                         line: line_num,
                         message: format!("Capacitor '{}' has zero capacitance", parts[0]),
@@ -255,7 +254,6 @@ fn check_zero_value_components(lines: &[&str], result: &mut LintResult) {
                         backends_affected: vec!["ngspice".to_string(), "xyce".to_string()],
                     });
                 }
-            }
             _ => {}
         }
     }
@@ -364,8 +362,7 @@ fn check_undefined_parameters(lines: &[&str], result: &mut LintResult) {
                         && !expr_lower.contains('/')
                         && !expr_lower.contains('(')
                         && !defined_params.contains(&expr_lower)
-                    {
-                        if expr_lower.parse::<f64>().is_err() {
+                        && expr_lower.parse::<f64>().is_err() {
                             result.warnings.push(LintWarning {
                                 line: line_num,
                                 message: format!(
@@ -376,7 +373,6 @@ fn check_undefined_parameters(lines: &[&str], result: &mut LintResult) {
                                 backends_affected: vec![],
                             });
                         }
-                    }
                     i += end + 1;
                 } else {
                     break;

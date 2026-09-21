@@ -14,10 +14,10 @@ import pytest
 
 def ps():
     try:
-        import pyspice_rs
-        return pyspice_rs
+        import spicerack
+        return spicerack
     except ImportError:
-        pytest.skip("pyspice_rs not built")
+        pytest.skip("spicerack not built")
 
 
 # ======================================================================
@@ -411,3 +411,53 @@ class TestLiveSimulation:
         freq = ac.frequency
         assert len(freq) > 10
         assert freq[0] >= 1.0
+
+
+def test_ac_magnitude_and_phase_match_rc_theory():
+    """AC must expose |H| and phase, not just the real part (they differ)."""
+    import math
+    import spicerack as ps
+    from spicerack.unit import u_kOhm, u_uF
+
+    circuit = ps.Circuit("rc_bode")
+    circuit.V(name="in", positive="vin", negative=circuit.gnd, value=0.0, ac=1.0)
+    circuit.R(name="r1", positive="vin", negative="vout", value=1 @ u_kOhm)
+    circuit.C(name="c1", positive="vout", negative=circuit.gnd, value=1 @ u_uF)
+
+    sim = circuit.simulator(simulator="ngspice")
+    ac = sim.ac(variation="dec", number_of_points=10, start_frequency=1, stop_frequency=1e5)
+
+    fc = 1.0 / (2 * math.pi * 1e3 * 1e-6)
+    for f, mag, phase, real in zip(ac.frequency, ac.magnitude("vout"),
+                                   ac.phase("vout"), ac["vout"]):
+        expected_mag = 1.0 / math.sqrt(1 + (f / fc) ** 2)
+        expected_phase = -math.degrees(math.atan(f / fc))
+        assert abs(mag - expected_mag) < 1e-6 * max(1.0, expected_mag)
+        assert abs(phase - expected_phase) < 1e-3
+        # Real part is not the magnitude anywhere past DC.
+        if f > fc:
+            assert real < mag
+
+
+def test_noise_runs_when_saves_are_set():
+    """A node-name .save cannot name onoise_spectrum; emitting it fails the run."""
+    import math
+
+    import spicerack as ps
+
+    dut = ps.Subcircuit("nz", ["vin", "vout"])
+    dut.R(name="r1", positive="vin", negative="vout", value=1000.0)
+    dut.C(name="c1", positive="vout", negative="0", value=1e-6)
+
+    tb = ps.Testbench(dut)
+    tb.V(name="in", positive="vin", negative="0", value=1.0, ac=1.0)
+    tb.save("V(vout)")
+    noise = tb.noise(output_node="vout", ref_node="0", src="Vin",
+                     variation="dec", points=10, start_frequency=1.0,
+                     stop_frequency=1e5)
+
+    spectrum = noise["onoise_spectrum"]
+    assert len(spectrum) == len(noise.frequency)
+    # Flat band is the 1k resistor's thermal noise, sqrt(4kTR).
+    expected = math.sqrt(4 * 1.380649e-23 * 300.15 * 1000.0)
+    assert spectrum[0] == pytest.approx(expected, rel=0.02)

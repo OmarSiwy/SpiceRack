@@ -5,8 +5,8 @@ Two coupled inductors (K=0.9) forming a transformer, plus a tuning
 capacitor on the secondary.  Demonstrates L and K elements.
 Resonant f_0 = 1/(2*pi*sqrt(L*C)) ~ 5.03 MHz.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_kOhm, u_uH, u_pF
+import spicerack as ps
+from spicerack.unit import u_kOhm, u_uH, u_pF
 
 # ── DUT ──
 

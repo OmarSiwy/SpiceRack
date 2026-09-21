@@ -4,8 +4,8 @@ Example 14: 3-bit DAC Staircase (PWL Source)
 PieceWiseLinearVoltageSource generates 8 voltage steps (0..7/8 * Vref).
 Vref=3.3V, each step 1us. Demonstrates PWL waveform with transient.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_kOhm
+import spicerack as ps
+from spicerack.unit import u_kOhm
 
 # ── DUT ──
 

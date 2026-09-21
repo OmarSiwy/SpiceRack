@@ -9,13 +9,13 @@ import tempfile
 import os
 
 
-def import_pyspice():
-    """Import pyspice_rs, skip if not built yet."""
+def import_spicerack():
+    """Import spicerack, skip if not built yet."""
     try:
-        import pyspice_rs
-        return pyspice_rs
+        import spicerack
+        return spicerack
     except ImportError:
-        pytest.skip("pyspice_rs not built -- run 'maturin develop' first")
+        pytest.skip("spicerack not built -- run 'maturin develop' first")
 
 
 # ── Subcircuit Tests ──
@@ -23,17 +23,17 @@ def import_pyspice():
 
 class TestSubcircuitCreation:
     def test_create_subcircuit(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("inverter", ["vdd", "vss", "vin", "vout"])
         assert "inverter" in str(sc)
 
     def test_create_subcircuit_no_ports(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("top")
         assert "top" in str(sc)
 
     def test_create_subcircuit_with_params(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("amp", ["in", "out"], W="1u", L="180n")
         json_str = sc.to_json()
         data = json.loads(json_str)
@@ -42,21 +42,21 @@ class TestSubcircuitCreation:
         assert "L" in param_names
 
     def test_repr(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("buf", ["a", "b"])
         r = repr(sc)
         assert "Subcircuit" in r
         assert "buf" in r
 
     def test_gnd(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("test")
         assert sc.gnd == "0"
 
 
 class TestSubcircuitComponents:
     def test_resistor(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("r_test", ["in", "out"])
         sc.R(
             name="1",
@@ -70,7 +70,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["name"] == "1"
 
     def test_capacitor(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("c_test")
         sc.C(
             name="1",
@@ -82,7 +82,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Capacitor"
 
     def test_inductor(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("l_test")
         sc.L(
             name="1",
@@ -94,7 +94,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Inductor"
 
     def test_mutual_inductor(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("k_test")
         sc.L(
             name="1",
@@ -119,7 +119,7 @@ class TestSubcircuitComponents:
         assert data["components"][2]["type"] == "MutualInductor"
 
     def test_voltage_source(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("v_test")
         sc.V(
             name="dd",
@@ -132,7 +132,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["value"]["value"] == 3.3
 
     def test_current_source(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("i_test")
         sc.I(
             name="bias",
@@ -144,7 +144,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "CurrentSource"
 
     def test_behavioral_voltage(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("bv_test")
         sc.BV(
             name="1",
@@ -157,7 +157,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["expression"] == "V(in)*2"
 
     def test_behavioral_current(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("bi_test")
         sc.BI(
             name="1",
@@ -169,7 +169,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "BehavioralCurrent"
 
     def test_vcvs(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("e_test")
         sc.E(
             name="1",
@@ -184,7 +184,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["gain"] == 10.0
 
     def test_vccs(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("g_test")
         sc.G(
             name="1",
@@ -198,7 +198,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Vccs"
 
     def test_cccs(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("f_test")
         sc.F(
             name="1",
@@ -211,7 +211,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Cccs"
 
     def test_ccvs(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("h_test")
         sc.H(
             name="1",
@@ -224,7 +224,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Ccvs"
 
     def test_diode(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("d_test")
         sc.D(
             name="1",
@@ -237,7 +237,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["model"] == "D1N4148"
 
     def test_bjt(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("q_test")
         sc.Q(
             name="1",
@@ -250,7 +250,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Bjt"
 
     def test_bjt_alias(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("bjt_test")
         sc.BJT(
             name="1",
@@ -263,7 +263,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Bjt"
 
     def test_mosfet(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("m_test")
         sc.M(
             name="p1",
@@ -278,7 +278,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["model"] == "pmos"
 
     def test_mosfet_alias(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("mos_test")
         sc.MOSFET(
             name="1",
@@ -292,7 +292,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Mosfet"
 
     def test_jfet(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("j_test")
         sc.J(
             name="1",
@@ -305,7 +305,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Jfet"
 
     def test_mesfet(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("z_test")
         sc.Z(
             name="1",
@@ -318,7 +318,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Mesfet"
 
     def test_vswitch(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("s_test")
         sc.S(
             name="1",
@@ -332,7 +332,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "VSwitch"
 
     def test_iswitch(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("w_test")
         sc.W(
             name="1",
@@ -345,7 +345,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "ISwitch"
 
     def test_tline(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("t_test")
         sc.T(
             name="1",
@@ -361,7 +361,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["z0"] == 50.0
 
     def test_xspice(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("a_test")
         sc.A(
             name="adc1",
@@ -372,7 +372,7 @@ class TestSubcircuitComponents:
         assert data["components"][0]["type"] == "Xspice"
 
     def test_raw_resistor(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("raw_r_test")
         sc.R(
             name="1",
@@ -389,7 +389,7 @@ class TestSubcircuitComponents:
 
 class TestSubcircuitDirectives:
     def test_model(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("model_test")
         sc.model("nmos_3p3", "NMOS", VTO="0.7", KP="110e-6")
         data = json.loads(sc.to_json())
@@ -397,35 +397,35 @@ class TestSubcircuitDirectives:
         assert data["models"][0]["name"] == "nmos_3p3"
 
     def test_raw_spice(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("raw_test")
         sc.raw_spice(".options reltol=1e-6")
         data = json.loads(sc.to_json())
         assert ".options reltol=1e-6" in data["raw_spice"]
 
     def test_include(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("inc_test")
         sc.include("/path/to/model.lib")
         data = json.loads(sc.to_json())
         assert "/path/to/model.lib" in data["includes"]
 
     def test_lib(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("lib_test")
         sc.lib("/path/to/pdk.lib", "tt")
         data = json.loads(sc.to_json())
         assert ["/path/to/pdk.lib", "tt"] in data["libs"]
 
     def test_osdi(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("osdi_test")
         sc.osdi("/path/to/model.osdi")
         data = json.loads(sc.to_json())
         assert "/path/to/model.osdi" in data["osdi_loads"]
 
     def test_parameter(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("param_test")
         sc.parameter("vdd", "3.3")
         data = json.loads(sc.to_json())
@@ -435,7 +435,7 @@ class TestSubcircuitDirectives:
 
 class TestSubcircuitInstances:
     def test_instance(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         inv = ps.Subcircuit("inverter", ["vdd", "vss", "vin", "vout"])
         inv.M(
             name="p1",
@@ -461,7 +461,7 @@ class TestSubcircuitInstances:
         assert data["instances"][0]["subcircuit"] == "inverter"
 
     def test_x_instance(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("top")
         sc.X("1", "MyBuf", "in", "out", "vdd", "gnd")
         data = json.loads(sc.to_json())
@@ -471,7 +471,7 @@ class TestSubcircuitInstances:
 
 class TestSubcircuitSerialization:
     def test_json_roundtrip(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("amp", ["in", "out"])
         sc.R(
             name="1",
@@ -490,7 +490,7 @@ class TestSubcircuitSerialization:
         assert sc2.to_json() == json_str
 
     def test_save_and_load(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("roundtrip", ["a", "b"])
         sc.R(
             name="1",
@@ -510,14 +510,14 @@ class TestSubcircuitSerialization:
             os.unlink(path)
 
     def test_from_json_invalid(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         with pytest.raises(ValueError):
             ps.Subcircuit.from_json("not valid json")
 
 
 class TestSubcircuitWaveforms:
     def test_sinusoidal_voltage(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("sin_test")
         sc.SinusoidalVoltageSource(
             name="in",
@@ -531,7 +531,7 @@ class TestSubcircuitWaveforms:
         assert comp["waveform"]["type"] == "Sin"
 
     def test_pulse_voltage(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("pulse_test")
         sc.PulseVoltageSource(
             name="clk",
@@ -544,7 +544,7 @@ class TestSubcircuitWaveforms:
         assert data["components"][0]["waveform"]["type"] == "Pulse"
 
     def test_pwl_voltage(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("pwl_test")
         sc.PieceWiseLinearVoltageSource(
             name="ramp",
@@ -556,7 +556,7 @@ class TestSubcircuitWaveforms:
         assert data["components"][0]["waveform"]["type"] == "Pwl"
 
     def test_sinusoidal_current(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("sin_i_test")
         sc.SinusoidalCurrentSource(
             name="in",
@@ -569,7 +569,7 @@ class TestSubcircuitWaveforms:
         assert data["components"][0]["waveform"]["type"] == "Sin"
 
     def test_pulse_current(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         sc = ps.Subcircuit("pulse_i_test")
         sc.PulseCurrentSource(
             name="pulse",
@@ -586,7 +586,7 @@ class TestSubcircuitWaveforms:
 
 class TestTestbenchCreation:
     def test_create_testbench(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("my_amp", ["inp", "out"])
         dut.R(
             name="1",
@@ -598,7 +598,7 @@ class TestTestbenchCreation:
         assert "my_amp" in str(tb)
 
     def test_stimulus(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("rc", ["in", "out"])
         dut.R(
             name="1",
@@ -625,7 +625,7 @@ class TestTestbenchCreation:
         assert len(data["testbench"]["stimulus"]) == 1
 
     def test_add_subcircuit(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         inv = ps.Subcircuit("inverter", ["vdd", "vss", "vin", "vout"])
         inv.M(
             name="p1",
@@ -646,7 +646,7 @@ class TestTestbenchCreation:
         assert len(data["subcircuit_defs"]) == 1
 
     def test_options(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("test")
         dut.R(
             name="1",
@@ -663,7 +663,7 @@ class TestTestbenchCreation:
         assert "reltol" in opt_keys
 
     def test_temperature(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("test")
         dut.R(
             name="1",
@@ -678,7 +678,7 @@ class TestTestbenchCreation:
         assert data["testbench"]["temperature"] == 85.0
 
     def test_save(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("test")
         dut.R(
             name="1",
@@ -693,7 +693,7 @@ class TestTestbenchCreation:
         assert "v(out)" in data["testbench"]["saves"]
 
     def test_measure(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("test")
         dut.R(
             name="1",
@@ -708,7 +708,7 @@ class TestTestbenchCreation:
         assert len(data["testbench"]["measures"]) == 1
 
     def test_step(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("test")
         dut.R(
             name="1",
@@ -723,7 +723,7 @@ class TestTestbenchCreation:
         assert len(data["testbench"]["step_params"]) == 1
 
     def test_waveform_sources(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("test")
         dut.R(
             name="1",
@@ -746,7 +746,7 @@ class TestTestbenchCreation:
         assert stim[0]["waveform"]["type"] == "Sin"
 
     def test_current_waveform_sources(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("current_tb", ["in", "out"])
         tb = ps.Testbench(dut)
         tb.PulseCurrentSource(
@@ -762,7 +762,7 @@ class TestTestbenchCreation:
         assert stim[0]["waveform"]["type"] == "Pulse"
 
     def test_add_multi_analysis_and_netlist(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("multi", ["in", "out"])
         dut.R(name="1", positive="in", negative="out", value=1000.0)
         tb = ps.Testbench(dut)
@@ -779,7 +779,7 @@ class TestTestbenchCreation:
         assert ".meas tran vmax MAX V(out)" in netlist
 
     def test_testbench_statistical_analysis_builders(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("amp_mc", ["vin", "vout"])
         tb = ps.Testbench(dut)
         tb.add_xyce_sampling(25, {"Rload": "normal(1000,50)"})
@@ -803,7 +803,7 @@ class TestTestbenchCreation:
 
 class TestTestbenchCheckBackend:
     def test_check_backend_clean(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("simple")
         dut.R(
             name="1",
@@ -822,7 +822,7 @@ class TestTestbenchCheckBackend:
         assert len(issues) == 0
 
     def test_check_backend_xspice_on_xyce(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         dut = ps.Subcircuit("xspice_test")
         dut.A(
             name="adc1",
@@ -839,20 +839,20 @@ class TestTestbenchCheckBackend:
 
 class TestModelLibrary:
     def test_create(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         lib = ps.ModelLibrary("/path/to/sky130.lib", corner="tt")
         assert lib.name == "sky130"
         assert lib.path == "/path/to/sky130.lib"
         assert lib.corner == "tt"
 
     def test_create_no_corner(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         lib = ps.ModelLibrary("/models/custom.lib")
         assert lib.name == "custom"
         assert lib.corner is None
 
     def test_repr(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         lib = ps.ModelLibrary("/path/to/sky130.lib", corner="tt")
         r = repr(lib)
         assert "ModelLibrary" in r
@@ -866,7 +866,7 @@ class TestBackwardsCompat:
     """Ensure existing Circuit API still works unchanged."""
 
     def test_circuit_basic(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("test")
         c.V(
             name="1",
@@ -892,7 +892,7 @@ class TestBackwardsCompat:
         assert "R2" in netlist
 
     def test_circuit_model(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("mos")
         c.M(
             name="1",
@@ -908,7 +908,7 @@ class TestBackwardsCompat:
         assert ".model" in netlist
 
     def test_circuit_simulator(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("sim_test")
         c.V(
             name="1",
@@ -926,7 +926,7 @@ class TestBackwardsCompat:
         assert repr(sim) == "CircuitSimulator"
 
     def test_circuit_getitem(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("lookup")
         c.R(
             name="1",
@@ -938,7 +938,7 @@ class TestBackwardsCompat:
         assert "R1" in elem
 
     def test_circuit_subcircuit_instance(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("x_test")
         c.X("1", "MyBuf", "in", "out", "vdd")
         netlist = str(c)
@@ -950,7 +950,7 @@ class TestSimulatorCheckBackend:
     """Test check_backend method on existing CircuitSimulator."""
 
     def test_check_backend_on_simulator(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("check_test")
         c.R(
             name="1",

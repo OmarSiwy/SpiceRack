@@ -4,8 +4,8 @@ Example 09: All Four Controlled Source Types
 E (VCVS), G (VCCS), F (CCCS), H (CCVS) driven from the same
 1V input.  Each produces output on a separate node.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm
 
 # ── DUT ──
 

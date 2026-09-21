@@ -5,8 +5,8 @@ Complementary NMOS/PMOS inverter, VDD=3.3V.
 Demonstrates MOSFET model definitions and transient analysis with
 pulse input.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V
+import spicerack as ps
+from spicerack.unit import u_V
 
 # ── DUT ──
 

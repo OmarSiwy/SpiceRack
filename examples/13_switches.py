@@ -4,8 +4,8 @@ Example 13: Voltage- and Current-Controlled Switches
 S (voltage-controlled) and W (current-controlled) switches.
 Demonstrates switch models with ON/OFF resistance.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm
 
 # ── DUT ──
 

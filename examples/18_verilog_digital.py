@@ -7,8 +7,8 @@ for the d_cosim connection.
 
 Requires ngspice with XSPICE + iverilog on $PATH.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V
+import spicerack as ps
+from spicerack.unit import u_V
 
 VERILOG_COUNTER = """\
 module counter(clk, rst, count);

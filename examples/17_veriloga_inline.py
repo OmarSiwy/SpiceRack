@@ -7,8 +7,8 @@ then instantiates it alongside a standard R.
 Requires 'openvaf' (or 'openvaf-r') on $PATH, and ngspice with
 matching OSDI version support (v0.4 for openvaf-r).
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm
 
 VERILOGA_RESISTOR = r"""
 `include "disciplines.vams"

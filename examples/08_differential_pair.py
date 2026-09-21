@@ -5,8 +5,8 @@ Matched NMOS pair with 200uA tail current source, resistive loads.
 VDD=3.3V, Vcm=1.65V, Vdiff=10mV.
 Demonstrates I (current source) element.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm, u_uA
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm, u_uA
 
 # ── DUT ──
 

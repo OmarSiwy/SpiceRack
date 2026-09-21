@@ -6,8 +6,8 @@ AC analysis shows -3dB at f = 1/(2*pi*R*C) ~ 159 Hz.
 Step response shows exponential charging with tau = R*C = 1ms.
 """
 import math
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm, u_uF
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm, u_uF
 
 # ── DUT ──
 

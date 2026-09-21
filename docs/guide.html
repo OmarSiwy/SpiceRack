@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>User Guide — DeSpice</title>
+<title>SpiceRack User Guide</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <nav class="topnav">
-  <a class="brand" href="index.html">DeSpice</a>
+  <a class="brand" href="index.html">SpiceRack</a>
   <a href="index.html">Home</a>
   <a class="active" href="guide.html">User Guide</a>
   <a href="reference.html">API Reference</a>
@@ -42,7 +42,7 @@
 <h2 id="install">Installation</h2>
 <pre><code>python3 -m venv .venv
 source .venv/bin/activate
-pip install maturin numpy pytest
+pip install maturin pytest
 maturin develop</code></pre>
 <p>Or, with Nix: <code>nix develop</code>.</p>
 <p>External tools, by feature:</p>
@@ -51,12 +51,12 @@ maturin develop</code></pre>
 <tr><td><code>ngspice</code></td><td>Default backend; most features (XSPICE, OSDI, control blocks)</td></tr>
 <tr><td><code>xyce</code> / <code>ltspice</code> / <code>spectre</code> / <code>vacask</code></td><td>Alternative backends</td></tr>
 <tr><td><code>openvaf</code></td><td>Compiling Verilog-A to OSDI (<code>veriloga()</code>, <code>compile_veriloga()</code>)</td></tr>
-<tr><td><code>iverilog</code></td><td>Digital Verilog co-simulation</td></tr>
+<tr><td><code>iverilog</code></td><td>Digital Verilog co-simulation (<code>verilog(mode="simulate")</code>)</td></tr>
+<tr><td><code>yosys</code></td><td>Verilog synthesis to gate level (<code>verilog(mode="synthesize")</code>)</td></tr>
 <tr><td><code>ciel</code> + <code>PDK_ROOT</code></td><td>Installing open PDKs (sky130, gf180mcu)</td></tr>
 </table>
 
 <h2 id="concepts">Core concepts</h2>
-<p>Three objects do most of the work:</p>
 <table>
 <tr><th>Class</th><th>Role</th></tr>
 <tr><td><code>Subcircuit(name, ports)</code></td><td>The design under test (DUT). Holds elements, models, parameters. Reusable and nestable.</td></tr>
@@ -64,8 +64,8 @@ maturin develop</code></pre>
 <tr><td><code>Circuit(title)</code></td><td>Flat, PySpice-style alternative: build a whole circuit, then call <code>.simulator()</code> for a <code>CircuitSimulator</code> with the same analysis methods.</td></tr>
 </table>
 
-<pre><code>import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm
+<pre><code>import spicerack as ps
+from spicerack.unit import u_V, u_kOhm
 
 dut = ps.Subcircuit("divider", ["vin", "vout"])   # ports
 dut.R(name="top", positive="vin", negative="vout", value=2 @ u_kOhm)
@@ -77,13 +77,16 @@ tb.with_backend("ngspice")
 op = tb.operating_point()</code></pre>
 
 <p>Ground is <code>dut.gnd</code> / <code>circuit.gnd</code> (node <code>"0"</code>).
-All element methods take keyword arguments. <code>str(circuit)</code>
-returns the generated netlist.</p>
+Element and analysis arguments are keyword-only unless noted:
+<code>X</code>, <code>model</code>, <code>include</code>, <code>lib</code>,
+<code>parameter</code>, <code>temp</code>, and <code>raw_spice</code> take
+positional arguments. <code>str(circuit)</code> returns the generated
+netlist.</p>
 
 <h2 id="units">Units</h2>
-<p>PySpice-style units live in <code>pyspice_rs.unit</code> and combine with
+<p>PySpice-style units live in <code>spicerack.unit</code> and combine with
 the <code>@</code> operator:</p>
-<pre><code>from pyspice_rs.unit import u_V, u_kOhm, u_pF, u_uH
+<pre><code>from spicerack.unit import u_V, u_kOhm, u_pF, u_uH
 
 r = 10 @ u_kOhm     # UnitValue, 10000.0 in SI
 c = 100 @ u_pF
@@ -96,9 +99,8 @@ float(r)            # 10000.0</code></pre>
 (<code>u_F … u_fF</code>), inductance (<code>u_H … u_nH</code>), frequency
 (<code>u_Hz … u_GHz</code>), time (<code>u_s … u_ps</code>), power
 (<code>u_W, u_mW, u_uW</code>), <code>u_Degree</code>. Unicode aliases for
-PySpice compatibility: <code>u_Ω</code>, <code>u_kΩ</code>, <code>u_MΩ</code>,
-<code>u_µF</code>, <code>u_µH</code>, <code>u_µA</code>, <code>u_µV</code>,
-<code>u_µW</code>, <code>u_µs</code>.</p>
+PySpice compatibility: <code>u_Ω</code>, <code>u_kΩ</code>,
+<code>u_MΩ</code>.</p>
 <p>Plain floats are accepted everywhere a <code>UnitValue</code> is:
 <code>value=10000.0</code> means 10&nbsp;kΩ.</p>
 
@@ -146,7 +148,7 @@ dut.F(name="1", positive="out", negative=dut.gnd,          # CCCS
 dut.H(name="1", positive="out", negative=dut.gnd,          # CCVS
       vsense="Vsense", transresistance=2000.0)</code></pre>
 <p>Current-controlled sources sense the current through a named voltage
-source — add a 0&nbsp;V source in the branch to measure:
+source. Add a 0&nbsp;V source in the branch to measure:
 <code>dut.V(name="sense", positive="a", negative="b", value=0.0)</code>.</p>
 
 <h3>Semiconductors</h3>
@@ -173,9 +175,9 @@ dut.model("SW_VCTL", "SW", VT=2.5, VH=0.5, RON=1.0, ROFF=1e6)</code></pre>
 <pre><code>dut.include("models.lib")            # .include
 dut.lib("sky130.lib.spice", "tt")    # .lib with section
 dut.parameter("rload", "10k")        # .param
-dut.options(scale="1e-6")            # .options
-dut.temp(85.0)                       # .temp
 dut.raw_spice("R99 a b 1k")          # raw netlist pass-through</code></pre>
+<p><code>circuit.options(scale="1e-6")</code> and
+<code>circuit.temp(85.0)</code> exist on <code>Circuit</code> only.</p>
 
 <h2 id="subcircuits">Subcircuits and hierarchy</h2>
 <pre><code>inverter = ps.Subcircuit("inverter", ["vdd", "in", "out"])
@@ -204,8 +206,8 @@ vout = op["vout"]            # node voltage as float</code></pre>
 
 <h3>DC sweep</h3>
 <pre><code>dc = tb.dc(Vin=slice(0, 5, 0.1))   # sweep source Vin from 0 to 5 V in 0.1 V steps
-x = dc.sweep                       # sweep axis (numpy)
-y = dc["vout"]                     # swept node voltage (numpy)</code></pre>
+x = dc.sweep                       # sweep axis, list[float]
+y = dc["vout"]                     # swept node voltage, list[float]</code></pre>
 
 <h3>AC</h3>
 <pre><code># Source needs an AC magnitude: tb.V(..., value=0.0, ac=1.0)
@@ -242,33 +244,42 @@ tb.stability(probe="Vprobe", variation="dec", number_of_points=10,
 tb.transient_noise(step_time=1e-9, end_time=1e-6)</code></pre>
 
 <h3>Backend-specific analyses</h3>
-<p>Spectre: <code>spectre_sweep</code>, <code>spectre_montecarlo</code>,
+<p>These run on <code>CircuitSimulator</code>. Spectre:
+<code>spectre_sweep</code>, <code>spectre_montecarlo</code>,
 <code>spectre_pac</code>, <code>spectre_pnoise</code>,
 <code>spectre_pxf</code>, <code>spectre_pstb</code>.
 Xyce: <code>xyce_sampling</code>, <code>xyce_embedded_sampling</code>,
 <code>xyce_pce</code>, <code>xyce_fft</code>. See the
 <a href="reference.html#backend-analyses">API reference</a> for signatures.</p>
-<pre><code># Xyce Monte Carlo over device parameters
-res = tb.xyce_sampling(num_samples=100,
-    param_distributions=[("R1", "normal(1000,50)"),
-                         ("R2", "uniform(900,1100)")])
+<pre><code>sim = circuit.simulator(simulator="xyce")
+
+# Xyce Monte Carlo over device parameters
+res = sim.xyce_sampling(100, [("R1", "normal(1000,50)"),
+                              ("R2", "uniform(900,1100)")])
 
 # Xyce FFT with signal-quality metrics
-fft = tb.xyce_fft(signal="V(vout)", np=1024, start=0.0, stop=1e-3,
-                  window="HANN")
+fft = sim.xyce_fft("V(vout)", np=1024, start=0.0, stop=1e-3, window="HANN")
 fft.enob, fft.sfdr_db, fft.snr_db, fft.thd_db</code></pre>
+<p><code>Testbench</code> has builder forms instead, which add the directive
+to the generated netlist: <code>add_xyce_sampling</code>,
+<code>add_xyce_embedded_sampling</code>, <code>add_xyce_pce</code>,
+<code>add_spectre_sweep</code>, <code>add_spectre_monte_carlo</code>.</p>
+<pre><code>tb.add_xyce_sampling(100, {"R1": "normal(1000,50)"})
+netlist = tb.netlist("xyce")</code></pre>
 
 <h2 id="results">Reading results</h2>
 <p>All result objects share one access pattern:</p>
-<pre><code>res["vout"]        # numpy array (or float for operating_point)
+<pre><code>res["vout"]        # list[float] (or a float for operating_point)
 res.vout           # attribute access works too
-res.nodes          # list of available node names
-res.branches       # list of available branch names
-res.measures       # dict of .measure results, name -> float</code></pre>
+res.measures       # dict of .measure results, name -> float
+
+dc.nodes           # DcAnalysis only: available node names
+dc.branches        # DcAnalysis only: available branch names</code></pre>
 <p>Axis properties per analysis: <code>dc.sweep</code>,
-<code>ac.frequency</code>, <code>tran.time</code>. Branch currents are saved
-when <code>tb.save_currents = True</code> or saved explicitly via
-<code>tb.save("I(Vsupply)")</code>.</p>
+<code>ac.frequency</code>, <code>tran.time</code>. Save branch currents
+explicitly with <code>tb.save("I(Vsupply)")</code>. On a
+<code>CircuitSimulator</code> you can also set
+<code>sim.save_currents = True</code> to save all of them.</p>
 
 <h2 id="config">Simulator configuration</h2>
 <pre><code>tb.temperature = 27.0            # .temp
@@ -277,7 +288,7 @@ tb.nominal_temperature = 25.0    # .options tnom
 tb.options(RELTOL="1e-4", ABSTOL="1e-12", VNTOL="1e-6", GMIN="1e-12")
 
 tb.save("V(output)")             # explicit save list
-tb.save_currents = True          # save all branch currents
+sim.save_currents = True         # CircuitSimulator only: all branch currents
 
 tb.measure("TRAN", "v_peak", "MAX", "V(output)")   # .meas → res.measures["v_peak"]
 
@@ -291,20 +302,20 @@ tb.step_sweep("R1", 100, 10000, 10, "dec")         # lin | oct | dec</code></pre
 <pre><code>ps.CircuitSimulator.available_backends()   # what's installed locally
 tb.with_backend("vacask")                  # force a backend
 sim = circuit.simulator(simulator="xyce")  # Circuit-style override</code></pre>
-<p>With no override, DeSpice picks a backend automatically based on the
+<p>With no override, SpiceRack picks a backend automatically based on the
 circuit's features (XSPICE elements, OSDI models, measures, …) and the
 requested analysis. Capability matrix:</p>
 <table>
 <tr><th>Feature</th><th>ngspice</th><th>xyce</th><th>ltspice</th><th>vacask</th><th>spectre</th></tr>
-<tr><td>XSPICE (A-elements)</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>No</td></tr>
+<tr><td>XSPICE (A-elements)</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>No</td></tr>
 <tr><td>OSDI (Verilog-A)</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>Yes</td></tr>
-<tr><td>.measure</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>No</td></tr>
-<tr><td>.step parameters</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>.measure</td><td>Yes</td><td>Yes</td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td>.step parameters</td><td>No</td><td>Yes</td><td>Yes</td><td>No</td><td>Yes</td></tr>
 <tr><td>Control blocks</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>No</td></tr>
-<tr><td>Laplace sources</td><td>No</td><td>No</td><td>Yes</td><td>No</td><td>No</td></tr>
-<tr><td>Verilog co-sim</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Laplace sources</td><td>Yes</td><td>No</td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td>Verilog co-sim</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>Yes</td></tr>
 </table>
-<p>Hot-swap pattern — same DUT, loop over backends:</p>
+<p>Same DUT, loop over backends:</p>
 <pre><code>for backend in ["ngspice", "vacask"]:
     tb = ps.Testbench(dut)
     tb.V(name="supply", positive="vin", negative=dut.gnd, value=10 @ u_V)
@@ -330,8 +341,8 @@ op = tb.operating_point()</code></pre>
 <p><code>ModelLibrary(path, corner=None, setup_includes=None,
 **backend_paths)</code> also accepts per-backend model paths as keyword
 arguments so one library object can serve several simulators. Swapping PDKs
-means swapping the library and the model names — topology stays the same
-(see <a href="examples.html">examples 20–21</a>).</p>
+means swapping the library and the model names. Topology stays the same
+(see <a href="examples.html">examples 20 and 21</a>).</p>
 
 <h2 id="lint">Linting and backend checks</h2>
 <pre><code># Check a testbench against a backend before running
@@ -343,8 +354,8 @@ for issue in issues:
 report = ps.lint(netlist_text, backend="ngspice")
 report["errors"]    # [{"line": int, "message": str}, ...]
 report["warnings"]  # adds "suggestion" and "backends_affected"</code></pre>
-<p>Catches missing models, dangling nodes, backend-incompatible constructs,
-and similar problems before they become cryptic simulator errors.</p>
+<p>Catches missing models, dangling nodes, and backend-incompatible
+constructs.</p>
 
 <h2 id="veriloga">Verilog-A</h2>
 <div class="callout">Requires <code>openvaf</code> on <code>$PATH</code> and
@@ -369,7 +380,7 @@ path = ps.compile_veriloga("model.va")        # module-level compile helper</cod
 
 <h2 id="verilog">Digital Verilog co-simulation</h2>
 <div class="callout">Requires ngspice with XSPICE and <code>iverilog</code>
-on <code>$PATH</code>.</div>
+on <code>$PATH</code>. Synthesis mode also needs <code>yosys</code>.</div>
 <pre><code># Analog <-> digital bridges
 dut.model("adc_bridge_model", "adc_bridge", in_low=0.8, in_high=2.0)
 dut.model("dac_bridge_model", "dac_bridge", out_low=0.0, out_high=3.3)
@@ -380,14 +391,19 @@ dut.A(name="dac1", connections=["[d0 d1 d2 d3]", "[a0 a1 a2 a3]"],
       model="dac_bridge_model")</code></pre>
 <p>There is also a high-level <code>circuit.verilog(source=..., mode="simulate"
 | "synthesize", instance_name=..., connections={...}, pdk=..., liberty=...,
-spice_models=...)</code> that wires a Verilog module in directly. See
-<a href="examples.html">example 18</a>.</p>
+spice_models=...)</code> that wires a Verilog module in directly.
+<code>mode="simulate"</code> compiles with <code>iverilog</code> and drives
+ngspice's <code>d_cosim</code> XSPICE model. <code>mode="synthesize"</code>
+runs <code>yosys</code> against the <code>liberty</code> file and emits
+gate-level subcircuit calls instead. <a href="examples.html">Example 18</a>
+shows the low-level bridge form above; it does not call
+<code>verilog()</code>.</p>
 
 <h2 id="testbenches">Design testbench recipes</h2>
-<p>The <code>testbenches</code> library (example 22) ships reusable recipes
-for analog blocks — amplifier gain, ADC ramp, DAC static linearity, PLL
-lock, bandgap reference — plus a validation framework:</p>
-<pre><code>from testbenches import (
+<p>The <code>testbenches</code> library (example 22) has recipes for
+amplifier gain, ADC ramp, DAC linearity, PLL lock, and bandgap reference,
+plus validation helpers:</p>
+<pre><code>from spicerack.testbenches import (
     CornerCase, MetricSpec, MonteCarloPlan, ValidationRule,
     amplifier_voltage_gain, bandgap_reference,
     corner_netlists, extract_metrics, validate_metrics)
@@ -401,9 +417,13 @@ cornered = corner_netlists(lambda: bandgap_reference(...), corners)
 
 metrics = extract_metrics(waveforms,
                           [MetricSpec("vout_final", "vout", "final")])
-report = validate_metrics(metrics, bench.validation)</code></pre>
+report = validate_metrics(metrics, [
+    ValidationRule("output window", "vout_final", minimum=1.18, maximum=1.23),
+])</code></pre>
+<p><code>bench.validation</code> is a <code>list[str]</code> of plain-English
+intent, not rules. Write the <code>ValidationRule</code> objects yourself.</p>
 
 </main>
-<footer>DeSpice documentation — generated from the source in <code>src/</code> and <code>examples/</code>.</footer>
+<footer>SpiceRack documentation.</footer>
 </body>
 </html>

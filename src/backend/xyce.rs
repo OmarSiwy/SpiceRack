@@ -46,23 +46,15 @@ impl Backend for XyceSubprocess {
         let cir_path = cir_file.path();
         let raw_path = cir_path.with_extension("raw");
 
-        let program = if self.parallel { "Xyce" } else { "Xyce" };
-
-        let mut cmd = Command::new(program);
-        cmd.arg("-r").arg(&raw_path).arg(cir_path);
-
-        if self.parallel {
+        let mut cmd = if self.parallel {
             // Xyce parallel mode uses MPI
-            let mut mpi_cmd = Command::new("mpirun");
-            mpi_cmd
-                .arg("-np")
-                .arg("4")
-                .arg(program)
-                .arg("-r")
-                .arg(&raw_path)
-                .arg(cir_path);
-            cmd = mpi_cmd;
-        }
+            let mut c = Command::new("mpirun");
+            c.arg("-np").arg("4").arg("Xyce");
+            c
+        } else {
+            Command::new("Xyce")
+        };
+        cmd.arg("-r").arg(&raw_path).arg(cir_path);
 
         let output = cmd.output()?;
 

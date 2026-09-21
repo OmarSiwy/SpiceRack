@@ -5,16 +5,16 @@
 // `Circuit::Display`. This is the "round-trip: build IR, emit, assert no
 // string-translation pass runs" test from the issue.
 
-use pyspice::backend::ngspice::NgspiceSubprocess;
-use pyspice::backend::xyce::XyceSubprocess;
-use pyspice::backend::ltspice::LtspiceSubprocess;
-use pyspice::backend::spectre::SpectreSubprocess;
-use pyspice::backend::vacask::VacaskSubprocess;
-use pyspice::backend::Backend;
-use pyspice::circuit::Circuit;
-use pyspice::codegen::spice3::{Spice3CodeGen, Spice3Dialect};
-use pyspice::codegen::CodeGen;
-use pyspice::ir::*;
+use spicerack::backend::ngspice::NgspiceSubprocess;
+use spicerack::backend::xyce::XyceSubprocess;
+use spicerack::backend::ltspice::LtspiceSubprocess;
+use spicerack::backend::spectre::SpectreSubprocess;
+use spicerack::backend::vacask::VacaskSubprocess;
+use spicerack::backend::Backend;
+use spicerack::circuit::Circuit;
+use spicerack::codegen::spice3::{Spice3CodeGen, Spice3Dialect};
+use spicerack::codegen::CodeGen;
+use spicerack::ir::*;
 
 /// Minimal IR: a resistor divider driven by a DC source, operating point.
 fn rc_op_ir() -> CircuitIR {

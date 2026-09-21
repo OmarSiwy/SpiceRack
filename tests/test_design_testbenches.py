@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from testbenches import (
+from spicerack.testbenches import (
     CornerCase,
     MetricSpec,
     MonteCarloPlan,
@@ -11,6 +11,7 @@ from testbenches import (
     adc_ramp,
     amplifier_voltage_gain,
     bandgap_reference,
+    bandgap_tempco,
     charge_amplifier,
     dac_static_linearity,
     pll_lock,
@@ -37,10 +38,10 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 def ps():
     try:
-        import pyspice_rs
-        return pyspice_rs
+        import spicerack
+        return spicerack
     except ImportError:
-        pytest.skip("pyspice_rs not built")
+        pytest.skip("spicerack not built")
 
 
 def dut(name, ports):
@@ -94,8 +95,14 @@ def test_current_waveform_and_spectre_step_support_for_charge_and_bandgap():
     bg = bandgap_reference(mod, dut("bg_spectre", ["vdd", "vref"]))
     spectre = bg.netlist("spectre")
     assert "mytnom options tnom=27" in spectre
-    assert "sweep" in spectre
     assert "dc1 dc" in spectre
+
+    # Temperature drift rides on `.dc temp`, not `.step param temp`: the ngspice
+    # codegen comments the step card out, so a step-based sweep would silently
+    # run at one temperature.
+    tc = bandgap_tempco(mod, dut("bg_tc", ["vdd", "vref"]))
+    assert "dc temp -40 125 5" in tc.netlist("ngspice")
+    assert "dc1 dc param=temp" in tc.netlist("spectre")
 
 
 def test_validation_rules_report_failures_and_successes():

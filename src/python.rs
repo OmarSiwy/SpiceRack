@@ -1,11 +1,10 @@
-//! PyO3 Python bindings — identical API surface to original PySpice.
+//! PyO3 Python bindings — identical API surface to original SpiceRack.
 //!
 //! ```python
-//! from pyspice_rs import Circuit
-//! from pyspice_rs.unit import *
+//! from spicerack import Circuit
+//! from spicerack.unit import *
 //! ```
 
-#![allow(non_snake_case)]
 
 use std::collections::HashMap;
 
@@ -188,14 +187,22 @@ impl PyCircuit {
         self.inner.k(name, inductor1, inductor2, coupling);
     }
 
-    #[pyo3(signature = (*, name, positive, negative, value))]
-    fn V(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg) {
+    #[pyo3(signature = (*, name, positive, negative, value, ac=None, ac_phase=None))]
+    fn V(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg,
+         ac: Option<f64>, ac_phase: Option<f64>) {
         self.inner.v(name, positive, negative, value.into_component_value());
+        if let Some(mag) = ac {
+            self.inner.last_element_mut().set_ac(mag, ac_phase);
+        }
     }
 
-    #[pyo3(signature = (*, name, positive, negative, value))]
-    fn I(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg) {
+    #[pyo3(signature = (*, name, positive, negative, value, ac=None, ac_phase=None))]
+    fn I(&mut self, name: &str, positive: &str, negative: &str, value: PyValueArg,
+         ac: Option<f64>, ac_phase: Option<f64>) {
         self.inner.i(name, positive, negative, value.into_component_value());
+        if let Some(mag) = ac {
+            self.inner.last_element_mut().set_ac(mag, ac_phase);
+        }
     }
 
     #[pyo3(signature = (*, name, positive, negative, expression))]
@@ -340,7 +347,7 @@ impl PyCircuit {
     /// ```
     fn veriloga(&mut self, source_or_path: &str) -> PyResult<String> {
         let osdi_path = compile_veriloga_impl(source_or_path)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+            .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
         self.inner.osdi(&osdi_path);
         Ok(osdi_path)
     }
@@ -532,23 +539,27 @@ impl PyCircuit {
                         coupling: *coupling,
                     }));
                 }
-                crate::ir::Component::VoltageSource { name, np, nm, value, waveform, .. } => {
+                crate::ir::Component::VoltageSource { name, np, nm, value, waveform, ac_magnitude, ac_phase, .. } => {
                     elements.push(Element::V(VoltageSource {
                         name: name.clone(),
                         np: Node::from(np.as_str()),
                         nm: Node::from(nm.as_str()),
                         value: ir_value_to_cv(value),
                         waveform: waveform.as_ref().map(ir_waveform_to_cir),
-                    }));
+            ac_magnitude: *ac_magnitude,
+            ac_phase: *ac_phase,
+        }));
                 }
-                crate::ir::Component::CurrentSource { name, np, nm, value, waveform, .. } => {
+                crate::ir::Component::CurrentSource { name, np, nm, value, waveform, ac_magnitude, ac_phase, .. } => {
                     elements.push(Element::I(CurrentSource {
                         name: name.clone(),
                         np: Node::from(np.as_str()),
                         nm: Node::from(nm.as_str()),
                         value: ir_value_to_cv(value),
                         waveform: waveform.as_ref().map(ir_waveform_to_cir),
-                    }));
+            ac_magnitude: *ac_magnitude,
+            ac_phase: *ac_phase,
+        }));
                 }
                 crate::ir::Component::BehavioralVoltage { name, np, nm, expression } => {
                     elements.push(Element::BV(BehavioralVoltage {
@@ -761,7 +772,7 @@ impl PyCircuit {
 
     fn set_source_value(&mut self, name: &str, value: f64) -> PyResult<()> {
         self.inner.set_source_value(name, value)
-            .map_err(|e| PyKeyError::new_err(e))
+            .map_err(PyKeyError::new_err)
     }
 
     fn node(&self, name: &str) -> String {
@@ -857,7 +868,7 @@ impl PySimulator {
 
     #[getter]
     fn get_save_currents(&self) -> bool {
-        false // TODO: expose from inner
+        self.inner.save_currents()
     }
 
     #[setter]
@@ -1324,11 +1335,10 @@ impl PyRawData {
     fn __getitem__(&self, name: &str) -> PyResult<Vec<f64>> {
         let lower = name.to_lowercase();
         for (i, var) in self.inner.variables.iter().enumerate() {
-            if var.name.to_lowercase() == lower {
-                if i < self.inner.real_data.len() {
+            if var.name.to_lowercase() == lower
+                && i < self.inner.real_data.len() {
                     return Ok(self.inner.real_data[i].clone());
                 }
-            }
         }
         Err(PyKeyError::new_err(format!("Variable '{}' not found", name)))
     }
@@ -1437,9 +1447,44 @@ impl PyAcAnalysis {
         self.inner.frequency.clone()
     }
 
+    /// |H| per frequency point. `ac[node]` returns the real part, not this.
+    fn magnitude(&self, name: &str) -> PyResult<Vec<f64>> {
+        self.complex_part(name, |wf| wf.magnitude())
+    }
+
+    /// 20*log10(|H|) per frequency point.
+    fn magnitude_db(&self, name: &str) -> PyResult<Vec<f64>> {
+        self.complex_part(name, |wf| wf.magnitude_db())
+    }
+
+    /// Phase in degrees (ngspice's own `vp()` reports radians; this does not).
+    fn phase(&self, name: &str) -> PyResult<Vec<f64>> {
+        self.complex_part(name, |wf| wf.phase_deg())
+    }
+
     #[getter]
     fn measures(&self) -> HashMap<String, f64> {
         measures_to_dict(&self.inner.base.measures)
+    }
+}
+
+impl PyAcAnalysis {
+    fn complex_part(
+        &self,
+        name: &str,
+        f: impl Fn(&crate::result::WaveForm) -> Option<Vec<f64>>,
+    ) -> PyResult<Vec<f64>> {
+        let wf = self
+            .inner
+            .base
+            .get(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("Node '{}' not found", name)))?;
+        f(wf).ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "Node '{}' has no complex data; the backend returned a real-valued plot",
+                name
+            ))
+        })
     }
 }
 
@@ -1802,7 +1847,7 @@ fn compile_veriloga_impl(source_or_path: &str) -> Result<String, String> {
         std::path::PathBuf::from(trimmed)
     } else {
         // Inline source — write to temp file
-        let dir = std::env::temp_dir().join("pyspice_va");
+        let dir = std::env::temp_dir().join("spicerack_va");
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
@@ -1824,15 +1869,12 @@ fn compile_veriloga_impl(source_or_path: &str) -> Result<String, String> {
     let osdi_path = va_path.with_extension("osdi");
 
     // Skip compilation if .osdi is newer than .va
-    if osdi_path.exists() {
-        if let (Ok(va_meta), Ok(osdi_meta)) = (va_path.metadata(), osdi_path.metadata()) {
-            if let (Ok(va_time), Ok(osdi_time)) = (va_meta.modified(), osdi_meta.modified()) {
-                if osdi_time > va_time {
+    if osdi_path.exists()
+        && let (Ok(va_meta), Ok(osdi_meta)) = (va_path.metadata(), osdi_path.metadata())
+            && let (Ok(va_time), Ok(osdi_time)) = (va_meta.modified(), osdi_meta.modified())
+                && osdi_time > va_time {
                     return Ok(osdi_path.to_string_lossy().to_string());
                 }
-            }
-        }
-    }
 
     // Compile with openvaf
     let output = Command::new("openvaf")
@@ -1866,7 +1908,7 @@ fn compile_veriloga_impl(source_or_path: &str) -> Result<String, String> {
 /// Returns the path to the compiled .osdi file.
 ///
 /// ```python
-/// from pyspice_rs import compile_veriloga
+/// from spicerack import compile_veriloga
 ///
 /// # From file:
 /// osdi_path = compile_veriloga("models/comparator.va")
@@ -1885,7 +1927,7 @@ fn compile_veriloga_impl(source_or_path: &str) -> Result<String, String> {
 #[pyfunction]
 fn compile_veriloga(source_or_path: &str) -> PyResult<String> {
     compile_veriloga_impl(source_or_path)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
+        .map_err(pyo3::exceptions::PyRuntimeError::new_err)
 }
 
 // ── Verilog compilation / synthesis helpers ──
@@ -1903,7 +1945,7 @@ fn resolve_verilog_source(source_or_path: &str) -> Result<std::path::PathBuf, St
         }
         Ok(std::path::PathBuf::from(trimmed))
     } else {
-        let dir = std::env::temp_dir().join("pyspice_verilog");
+        let dir = std::env::temp_dir().join("spicerack_verilog");
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
@@ -1942,15 +1984,12 @@ fn compile_verilog_iverilog(source_or_path: &str) -> Result<String, String> {
     let vvp_path = v_path.with_extension("vvp");
 
     // Skip compilation if .vvp is newer than .v
-    if vvp_path.exists() {
-        if let (Ok(v_meta), Ok(vvp_meta)) = (v_path.metadata(), vvp_path.metadata()) {
-            if let (Ok(v_time), Ok(vvp_time)) = (v_meta.modified(), vvp_meta.modified()) {
-                if vvp_time > v_time {
+    if vvp_path.exists()
+        && let (Ok(v_meta), Ok(vvp_meta)) = (v_path.metadata(), vvp_path.metadata())
+            && let (Ok(v_time), Ok(vvp_time)) = (v_meta.modified(), vvp_meta.modified())
+                && vvp_time > v_time {
                     return Ok(vvp_path.to_string_lossy().to_string());
                 }
-            }
-        }
-    }
 
     let output = Command::new("iverilog")
         .arg("-o")
@@ -1976,65 +2015,6 @@ fn compile_verilog_iverilog(source_or_path: &str) -> Result<String, String> {
     }
 
     Ok(vvp_path.to_string_lossy().to_string())
-}
-
-/// Compile Verilog source using Cadence tools (xrun or ncvlog) for Spectre co-simulation.
-/// Returns the path to the compiled output directory.
-#[allow(dead_code)]
-fn compile_verilog_spectre(source_or_path: &str) -> Result<String, String> {
-    use std::process::Command;
-
-    let v_path = resolve_verilog_source(source_or_path)?;
-    let work_dir = v_path.parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .join("xcelium.d");
-
-    // Try xrun first, fall back to ncvlog
-    let result = Command::new("xrun")
-        .arg("-compile")
-        .arg(&v_path)
-        .output();
-
-    match result {
-        Ok(output) if output.status.success() => {
-            return Ok(work_dir.to_string_lossy().to_string());
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            // xrun found but failed — try ncvlog as fallback
-            eprintln!("xrun failed, trying ncvlog: {}", stderr);
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // xrun not found, try ncvlog
-        }
-        Err(e) => {
-            return Err(format!("Failed to run xrun: {}", e));
-        }
-    }
-
-    // Fallback: ncvlog
-    let output = Command::new("ncvlog")
-        .arg(&v_path)
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                "Neither xrun nor ncvlog found on $PATH. Install Cadence Xcelium for \
-                 Spectre Verilog co-simulation.".to_string()
-            } else {
-                format!("Failed to run ncvlog: {}", e)
-            }
-        })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(format!(
-            "ncvlog compilation failed (exit {}):\n{}\n{}",
-            output.status, stderr, stdout
-        ));
-    }
-
-    Ok(work_dir.to_string_lossy().to_string())
 }
 
 /// Resolve PDK liberty and SPICE model paths from $PDK_ROOT.
@@ -2121,15 +2101,12 @@ fn synthesize_verilog_yosys(
     let synth_path = v_path.with_extension("synth.v");
 
     // Skip synthesis if output is newer than source
-    if synth_path.exists() {
-        if let (Ok(v_meta), Ok(s_meta)) = (v_path.metadata(), synth_path.metadata()) {
-            if let (Ok(v_time), Ok(s_time)) = (v_meta.modified(), s_meta.modified()) {
-                if s_time > v_time {
+    if synth_path.exists()
+        && let (Ok(v_meta), Ok(s_meta)) = (v_path.metadata(), synth_path.metadata())
+            && let (Ok(v_time), Ok(s_time)) = (v_meta.modified(), s_meta.modified())
+                && s_time > v_time {
                     return Ok(synth_path.to_string_lossy().to_string());
                 }
-            }
-        }
-    }
 
     let script = format!(
         "read_verilog {v}; synth -top {top}; dfflibmap -liberty {lib}; abc -liberty {lib}; write_verilog {out}",
@@ -2164,9 +2141,12 @@ fn synthesize_verilog_yosys(
     Ok(synth_path.to_string_lossy().to_string())
 }
 
+/// One synthesized cell: (instance_name, cell_name, port connections).
+type CellInstance = (String, String, Vec<(String, String)>);
+
 /// Parse a Yosys-synthesized Verilog netlist into cell instances.
 /// Returns vec of (instance_name, cell_name, port_connections as ".<port>(<net>)" pairs).
-fn parse_synthesized_netlist(netlist_path: &str) -> Result<Vec<(String, String, Vec<(String, String)>)>, String> {
+fn parse_synthesized_netlist(netlist_path: &str) -> Result<Vec<CellInstance>, String> {
     let content = std::fs::read_to_string(netlist_path)
         .map_err(|e| format!("Failed to read synthesized netlist: {}", e))?;
 
@@ -2252,7 +2232,7 @@ fn verilog_simulate_circuit(
 ) -> PyResult<()> {
     // Compile the Verilog source with iverilog
     let vvp_path = compile_verilog_iverilog(source)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+        .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
     // Build the connection list for the A-element.
     // For d_cosim, connections are grouped as digital port vectors.
@@ -2318,7 +2298,7 @@ fn verilog_synthesize_circuit(
             let sp = match spice_models {
                 Some(sp) => sp.to_string(),
                 None => resolve_pdk_paths(_pdk)
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?
+                    .map_err(pyo3::exceptions::PyRuntimeError::new_err)?
                     .1,
             };
             (lib.to_string(), sp)
@@ -2331,7 +2311,7 @@ fn verilog_synthesize_circuit(
         }
         (None, Some(pdk_name)) => {
             let (lib, sp) = resolve_pdk_paths(pdk_name)
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+                .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
             let sp = spice_models.map(|s| s.to_string()).unwrap_or(sp);
             (lib, sp)
         }
@@ -2351,18 +2331,18 @@ fn verilog_synthesize_circuit(
     };
 
     let module_name = extract_verilog_module_name(&source_text)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+        .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
     // Synthesize
     let synth_path = synthesize_verilog_yosys(source, &lib_path, &module_name)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+        .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
     // Include the SPICE cell models
     circuit.include(&spice_path);
 
     // Parse the synthesized netlist
     let gate_instances = parse_synthesized_netlist(&synth_path)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+        .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
     // Build a connection map from the user's connections dict
     let mut conn_map: HashMap<String, Vec<String>> = HashMap::new();
@@ -2388,7 +2368,7 @@ fn verilog_synthesize_circuit(
         }
         let node_refs: Vec<&str> = node_list.iter().map(|s| s.as_str()).collect();
         circuit.x(
-            &format!("{}_{}", instance_name, gate_inst),
+            format!("{}_{}", instance_name, gate_inst),
             cell_name,
             node_refs,
         );
@@ -2436,15 +2416,18 @@ fn add_ir_components(circuit: &mut cir::Circuit, components: &[crate::ir::Compon
             crate::ir::Component::MutualInductor { name, inductor1, inductor2, coupling } => {
                 circuit.k(name, inductor1, inductor2, *coupling);
             }
-            crate::ir::Component::VoltageSource { name, np, nm, value, waveform, .. } => {
+            crate::ir::Component::VoltageSource { name, np, nm, value, waveform, ac_magnitude, ac_phase, .. } => {
                 if let Some(wf) = waveform {
                     let cir_wf = ir_waveform_to_circuit(wf);
                     circuit.v_with_waveform(name, np.as_str(), nm.as_str(), ir_value_to_component_value(value), cir_wf);
                 } else {
                     circuit.v(name, np.as_str(), nm.as_str(), ir_value_to_component_value(value));
                 }
+                if let Some(mag) = ac_magnitude {
+                    circuit.last_element_mut().set_ac(*mag, *ac_phase);
+                }
             }
-            crate::ir::Component::CurrentSource { name, np, nm, value, waveform, .. } => {
+            crate::ir::Component::CurrentSource { name, np, nm, value, waveform, ac_magnitude, ac_phase, .. } => {
                 if let Some(wf) = waveform {
                     let cir_wf = ir_waveform_to_circuit(wf);
                     // Use i_with_waveform if it exists, otherwise use raw approach
@@ -2453,6 +2436,9 @@ fn add_ir_components(circuit: &mut cir::Circuit, components: &[crate::ir::Compon
                     let _ = wf; let _ = cir_wf;
                 } else {
                     circuit.i(name, np.as_str(), nm.as_str(), ir_value_to_component_value(value));
+                }
+                if let Some(mag) = ac_magnitude {
+                    circuit.last_element_mut().set_ac(*mag, *ac_phase);
                 }
             }
             crate::ir::Component::BehavioralVoltage { name, np, nm, expression } => {
@@ -2557,7 +2543,7 @@ fn ir_to_circuit(
     dut: &crate::ir::Subcircuit,
     tb: Option<&crate::ir::Testbench>,
     subcircuit_defs: &[crate::ir::Subcircuit],
-) -> cir::Circuit {
+) -> PyResult<cir::Circuit> {
     let mut circuit = cir::Circuit::new(&dut.name);
 
     // Add components from DUT
@@ -2632,12 +2618,15 @@ fn ir_to_circuit(
 
     // Process Verilog blocks from the DUT
     for vb in &dut.verilog_blocks {
-        if let Err(e) = apply_verilog_block_to_circuit(&mut circuit, vb) {
-            eprintln!("Warning: failed to apply verilog block '{}': {}", vb.instance_name, e);
-        }
+        apply_verilog_block_to_circuit(&mut circuit, vb).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "verilog block '{}': {}",
+                vb.instance_name, e
+            ))
+        })?;
     }
 
-    circuit
+    Ok(circuit)
 }
 
 /// Apply a VerilogBlock from IR to a Circuit.
@@ -2652,7 +2641,7 @@ fn apply_verilog_block_to_circuit(
 
             // Build connection list for A-element
             let mut conn_parts = Vec::new();
-            for (_port, conn) in &vb.connections {
+            for conn in vb.connections.values() {
                 match conn {
                     crate::ir::VerilogConnection::Single(net) => {
                         conn_parts.push(format!("[{}]", net));
@@ -2748,7 +2737,7 @@ fn apply_verilog_block_to_circuit(
                 }
                 let node_refs: Vec<&str> = node_list.iter().map(|s| s.as_str()).collect();
                 circuit.x(
-                    &format!("{}_{}", vb.instance_name, gate_inst),
+                    format!("{}_{}", vb.instance_name, gate_inst),
                     cell_name,
                     node_refs,
                 );
@@ -2798,22 +2787,26 @@ fn ir_components_to_elements(components: &[crate::ir::Component], elements: &mut
                     coupling: *coupling,
                 })
             }
-            crate::ir::Component::VoltageSource { name, np, nm, value, waveform, .. } => {
+            crate::ir::Component::VoltageSource { name, np, nm, value, waveform, ac_magnitude, ac_phase, .. } => {
                 cir::Element::V(cir::VoltageSource {
                     name: name.clone(),
                     np: cir::Node::from(np.as_str()),
                     nm: cir::Node::from(nm.as_str()),
                     value: ir_value_to_component_value(value),
                     waveform: waveform.as_ref().map(ir_waveform_to_circuit),
+                    ac_magnitude: *ac_magnitude,
+                    ac_phase: *ac_phase,
                 })
             }
-            crate::ir::Component::CurrentSource { name, np, nm, value, waveform, .. } => {
+            crate::ir::Component::CurrentSource { name, np, nm, value, waveform, ac_magnitude, ac_phase, .. } => {
                 cir::Element::I(cir::CurrentSource {
                     name: name.clone(),
                     np: cir::Node::from(np.as_str()),
                     nm: cir::Node::from(nm.as_str()),
                     value: ir_value_to_component_value(value),
                     waveform: waveform.as_ref().map(ir_waveform_to_circuit),
+                    ac_magnitude: *ac_magnitude,
+                    ac_phase: *ac_phase,
                 })
             }
             crate::ir::Component::BehavioralVoltage { name, np, nm, expression } => {
@@ -3449,7 +3442,7 @@ impl PySubcircuit {
 
     fn veriloga(&mut self, source_or_path: &str) -> PyResult<String> {
         let osdi_path = compile_veriloga_impl(source_or_path)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+            .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
         self.inner.osdi_loads.push(osdi_path.clone());
         Ok(osdi_path)
     }
@@ -4257,7 +4250,7 @@ impl PyTestbench {
     }
 
     fn to_simulator(&self) -> PyResult<crate::simulation::CircuitSimulator> {
-        let circuit = ir_to_circuit(&self.dut, Some(&self.inner), &self.subcircuit_defs);
+        let circuit = ir_to_circuit(&self.dut, Some(&self.inner), &self.subcircuit_defs)?;
         let mut sim = circuit.simulator();
         if let Some(ref backend) = self.backend_override {
             sim = sim.with_backend(backend.clone());
@@ -4291,7 +4284,7 @@ impl PyTestbench {
             }
         }
         // Attach the IR so the run path emits netlists through the backend's
-        // CodeGen (ADR-0001 / issue 01) rather than Circuit::Display.
+        // CodeGen rather than Circuit::Display.
         sim.set_ir(self.build_ir());
         Ok(sim)
     }
@@ -4417,16 +4410,16 @@ fn create_unit_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_submodule(&unit_mod)?;
 
-    // Register in sys.modules so `from pyspice_rs.unit import ...` works
+    // Register in sys.modules so `from spicerack.unit import ...` works
     let sys = m.py().import("sys")?;
     let modules = sys.getattr("modules")?;
-    modules.set_item("pyspice_rs.unit", &unit_mod)?;
+    modules.set_item("spicerack.unit", &unit_mod)?;
 
     Ok(())
 }
 
 #[pymodule(name = "_native")]
-pub fn pyspice_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn spicerack(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCircuit>()?;
     m.add_class::<PyUnit>()?;
     m.add_class::<PyUnitValue>()?;

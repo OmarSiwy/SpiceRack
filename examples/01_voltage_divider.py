@@ -4,8 +4,8 @@ Example 01: Voltage Divider
 Resistive voltage divider: Vin=10V, R1=2k, R2=1k.
 Expected Vout = 10 * 1k / (2k + 1k) = 3.333V.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm
 
 # ── DUT ──
 

@@ -11,18 +11,18 @@ import pytest
 
 def ps():
     try:
-        import pyspice_rs
-        return pyspice_rs
+        import spicerack
+        return spicerack
     except ImportError:
-        pytest.skip("pyspice_rs not built")
+        pytest.skip("spicerack not built")
 
 
 def unit():
     try:
-        from pyspice_rs import unit
+        from spicerack import unit
         return unit
     except ImportError:
-        pytest.skip("pyspice_rs not built")
+        pytest.skip("spicerack not built")
 
 
 # ======================================================================

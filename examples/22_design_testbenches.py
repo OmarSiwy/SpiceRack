@@ -14,8 +14,8 @@ for path in (PYTHON_SRC, ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-import pyspice_rs as ps
-from testbenches import (
+import spicerack as ps
+from spicerack.testbenches import (
     CornerCase,
     MetricSpec,
     MonteCarloPlan,
@@ -25,6 +25,7 @@ from testbenches import (
     amplifier_transimpedance,
     amplifier_voltage_gain,
     bandgap_reference,
+    bandgap_tempco,
     charge_amplifier,
     dac_static_linearity,
     demux_routing,
@@ -75,7 +76,13 @@ def main():
 
     spectre_bandgap = benches[-1].netlist("spectre")
     assert "mytnom options tnom=27" in spectre_bandgap
-    assert "sweep" in spectre_bandgap
+
+    # Temperature drift goes through `.dc temp`, which every backend emits.
+    # `.step param temp` is commented out by the ngspice codegen, so a
+    # step-based sweep silently runs at a single temperature.
+    tempco = bandgap_tempco(ps, make_dut("bandgap_tc", ["vdd", "vref"]))
+    assert "dc temp -40 125 5" in tempco.netlist("ngspice")
+    assert "dc1 dc param=temp" in tempco.netlist("spectre")
 
     corners = [
         CornerCase("tt_27", temperature=27, parameters={"vdd_nom": 3.3}),

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use pyspice::codegen::CodeGen;
-use pyspice::codegen::spice3::{Spice3CodeGen, Spice3Dialect};
-use pyspice::codegen::spectre::SpectreCodeGen;
-use pyspice::ir::*;
+use spicerack::codegen::CodeGen;
+use spicerack::codegen::spice3::{Spice3CodeGen, Spice3Dialect};
+use spicerack::codegen::spectre::SpectreCodeGen;
+use spicerack::ir::*;
 
 // ── Shared test fixtures ──
 
@@ -502,7 +502,7 @@ fn test_spectre_options() {
 
 #[test]
 fn test_roundtrip_from_circuit_sanity() {
-    use pyspice::circuit::{Circuit, Param};
+    use spicerack::circuit::{Circuit, Param};
 
     let mut c = Circuit::new("Roundtrip Test");
     c.r("1", "a", "b", 4700.0);

@@ -5,8 +5,8 @@ Four 1N4148 diodes, 10Vpk 60Hz AC input, 100uF filter cap.
 Demonstrates D element with .model and transient analysis.
 Expected Vdc ~ Vpeak - 2*Vfwd ~ 8.6V.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_kOhm, u_uF
+import spicerack as ps
+from spicerack.unit import u_kOhm, u_uF
 
 # ── DUT ──
 

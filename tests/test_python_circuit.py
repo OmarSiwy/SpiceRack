@@ -1,18 +1,18 @@
 """
-Python tests for pyspice_rs — tests the PyO3 bindings.
+Python tests for spicerack — tests the PyO3 bindings.
 
 Run with: maturin develop && pytest tests/
 """
 import pytest
 
 
-def import_pyspice():
-    """Import pyspice_rs, skip if not built yet."""
+def import_spicerack():
+    """Import spicerack, skip if not built yet."""
     try:
-        import pyspice_rs
-        return pyspice_rs
+        import spicerack
+        return spicerack
     except ImportError:
-        pytest.skip("pyspice_rs not built — run 'maturin develop' first")
+        pytest.skip("spicerack not built — run 'maturin develop' first")
 
 
 # ── Circuit Building ──
@@ -20,17 +20,17 @@ def import_pyspice():
 
 class TestCircuitCreation:
     def test_create_circuit(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("test_circuit")
         assert repr(c) == "Circuit('test_circuit')"
 
     def test_ground_node(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("gnd_test")
         assert c.gnd == "0"
 
     def test_str_output(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("netlist_test")
         netlist = str(c)
         assert ".title netlist_test" in netlist
@@ -39,7 +39,7 @@ class TestCircuitCreation:
 
 class TestPassiveComponents:
     def test_resistor(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("r_test")
         c.R(
             name="1",
@@ -51,7 +51,7 @@ class TestPassiveComponents:
         assert "R1 in out 1k" in netlist
 
     def test_capacitor(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("c_test")
         c.C(
             name="1",
@@ -63,7 +63,7 @@ class TestPassiveComponents:
         assert "C1 out 0 10p" in netlist
 
     def test_inductor(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("l_test")
         c.L(
             name="1",
@@ -75,7 +75,7 @@ class TestPassiveComponents:
         assert "L1 in out 1u" in netlist
 
     def test_mutual_inductor(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("k_test")
         c.L(
             name="1",
@@ -99,7 +99,7 @@ class TestPassiveComponents:
         assert "K1 L1 L2 0.99" in netlist
 
     def test_raw_spice_resistor(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("raw_test")
         c.R(
             name="1",
@@ -114,7 +114,7 @@ class TestPassiveComponents:
 
 class TestSources:
     def test_voltage_source(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("v_test")
         c.V(
             name="dd",
@@ -126,7 +126,7 @@ class TestSources:
         assert "Vdd vdd 0 3.3" in netlist
 
     def test_current_source(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("i_test")
         c.I(
             name="bias",
@@ -138,7 +138,7 @@ class TestSources:
         assert "Ibias 0 base 10u" in netlist
 
     def test_behavioral_voltage(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("bv_test")
         c.BV(
             name="1",
@@ -150,7 +150,7 @@ class TestSources:
         assert "B1 out 0 V=V(in)*2" in netlist
 
     def test_behavioral_current(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("bi_test")
         c.BI(
             name="1",
@@ -164,7 +164,7 @@ class TestSources:
 
 class TestControlledSources:
     def test_vcvs(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("vcvs_test")
         c.E(
             name="1",
@@ -178,7 +178,7 @@ class TestControlledSources:
         assert "E1 out_p out_m in_p in_m 10" in netlist
 
     def test_vccs(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("vccs_test")
         c.G(
             name="1",
@@ -192,7 +192,7 @@ class TestControlledSources:
         assert "G1 out_p out_m in_p in_m 0.001" in netlist
 
     def test_cccs(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("cccs_test")
         c.F(
             name="1",
@@ -205,7 +205,7 @@ class TestControlledSources:
         assert "F1 out_p out_m Vsense 100" in netlist
 
     def test_ccvs(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("ccvs_test")
         c.H(
             name="1",
@@ -220,7 +220,7 @@ class TestControlledSources:
 
 class TestSemiconductors:
     def test_diode(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("d_test")
         c.D(
             name="1",
@@ -232,7 +232,7 @@ class TestSemiconductors:
         assert "D1 anode cathode 1N4148" in netlist
 
     def test_bjt(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("q_test")
         c.Q(
             name="1",
@@ -245,7 +245,7 @@ class TestSemiconductors:
         assert "Q1 collector base 0 2n2222a" in netlist
 
     def test_bjt_alias(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("bjt_test")
         c.BJT(
             name="1",
@@ -258,7 +258,7 @@ class TestSemiconductors:
         assert "Q1 collector base 0 2n2222a" in netlist
 
     def test_mosfet(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("m_test")
         c.M(
             name="1",
@@ -272,7 +272,7 @@ class TestSemiconductors:
         assert "M1 drain gate source bulk nmos_3p3" in netlist
 
     def test_mosfet_alias(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("mosfet_test")
         c.MOSFET(
             name="1",
@@ -286,7 +286,7 @@ class TestSemiconductors:
         assert "M1 drain gate source bulk nmos_3p3" in netlist
 
     def test_jfet(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("j_test")
         c.J(
             name="1",
@@ -299,7 +299,7 @@ class TestSemiconductors:
         assert "J1 drain gate source njf" in netlist
 
     def test_mesfet(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("z_test")
         c.Z(
             name="1",
@@ -314,7 +314,7 @@ class TestSemiconductors:
 
 class TestSwitchesAndTLines:
     def test_voltage_switch(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("sw_test")
         c.S(
             name="1",
@@ -328,7 +328,7 @@ class TestSwitchesAndTLines:
         assert "S1 out 0 ctrl_p ctrl_m sw1" in netlist
 
     def test_current_switch(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("csw_test")
         c.W(
             name="1",
@@ -341,7 +341,7 @@ class TestSwitchesAndTLines:
         assert "W1 out 0 Vctrl csw1" in netlist
 
     def test_transmission_line(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("tl_test")
         c.T(
             name="1",
@@ -359,7 +359,7 @@ class TestSwitchesAndTLines:
 
 class TestDirectives:
     def test_model(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("model_test")
         c.model("nmos_3p3", "NMOS", LEVEL=1, VTO=0.7, KP=110e-6)
         netlist = str(c)
@@ -367,28 +367,28 @@ class TestDirectives:
         assert "LEVEL=1" in netlist
 
     def test_include(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("inc_test")
         c.include("/path/to/model.lib")
         netlist = str(c)
         assert ".include /path/to/model.lib" in netlist
 
     def test_lib(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("lib_test")
         c.lib("/path/to/pdk.lib", "tt")
         netlist = str(c)
         assert ".lib /path/to/pdk.lib tt" in netlist
 
     def test_parameter(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("param_test")
         c.parameter("vdd_val", "3.3")
         netlist = str(c)
         assert ".param vdd_val=3.3" in netlist
 
     def test_subcircuit_instance(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("x_test")
         c.X("1", "MyBuf", "in", "out", "vdd", "gnd")
         netlist = str(c)
@@ -398,7 +398,7 @@ class TestDirectives:
 
 class TestElementAccess:
     def test_getitem(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("access_test")
         c.R(
             name="1",
@@ -412,13 +412,13 @@ class TestElementAccess:
         assert "b" in result
 
     def test_getitem_not_found(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("access_test2")
         with pytest.raises(KeyError):
             _ = c["nonexistent"]
 
     def test_element_method(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("element_test")
         c.R(
             name="1",
@@ -432,7 +432,7 @@ class TestElementAccess:
 
 class TestWaveformSources:
     def test_sinusoidal_voltage(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("sin_test")
         c.SinusoidalVoltageSource(
             name="1",
@@ -448,7 +448,7 @@ class TestWaveformSources:
         assert "SIN(" in netlist
 
     def test_pulse_voltage(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("pulse_test")
         c.PulseVoltageSource(
             name="1",
@@ -465,7 +465,7 @@ class TestWaveformSources:
         assert "PULSE(" in netlist
 
     def test_pwl_voltage(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("pwl_test")
         c.PieceWiseLinearVoltageSource(
             name="1",
@@ -477,7 +477,7 @@ class TestWaveformSources:
         assert "PWL(" in netlist
 
     def test_sinusoidal_current(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("sin_i_test")
         c.SinusoidalCurrentSource(
             name="1",
@@ -495,7 +495,7 @@ class TestWaveformSources:
 
 class TestSimulator:
     def test_create_simulator(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("sim_test")
         c.V(
             name="dd",
@@ -507,7 +507,7 @@ class TestSimulator:
         assert repr(sim) == "CircuitSimulator"
 
     def test_create_simulator_with_backend(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("sim_backend_test")
         c.V(
             name="dd",
@@ -520,10 +520,10 @@ class TestSimulator:
 
 
 class TestFullCircuit:
-    """Test the complete circuit from TODO.md"""
+    """Full circuit: sources, passives, model, subcircuit instance."""
 
     def test_folded_cascode(self):
-        ps = import_pyspice()
+        ps = import_spicerack()
         c = ps.Circuit("folded_cascode")
         M1 = c.MOSFET(
             name="1",

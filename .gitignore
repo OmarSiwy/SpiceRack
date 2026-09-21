@@ -6,7 +6,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
-python/pyspice_rs/_native*.so
+python/spicerack/_native*.so
 dist/
 build/
 .venv/
@@ -20,12 +20,11 @@ build/
 # OS
 .DS_Store
 
-# mdBook output
-/book/
-
 # Test/cache
 .pytest_cache/
 .tox/
 
 # Nix build output
 target_nix/
+result
+result-*

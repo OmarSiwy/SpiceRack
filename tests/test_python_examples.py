@@ -18,9 +18,9 @@ REPO_ROOT = EXAMPLES_DIR.parent
 
 def _skip_if_not_built():
     try:
-        import pyspice_rs
+        import spicerack
     except ImportError:
-        pytest.skip("pyspice_rs not built")
+        pytest.skip("spicerack not built")
 
 
 def run_example(filename):

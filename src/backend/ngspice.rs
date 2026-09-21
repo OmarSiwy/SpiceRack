@@ -134,6 +134,96 @@ pub const NGSPICE_CAPS: BackendCapabilities = BackendCapabilities {
     verilog_cosim: true,
 };
 
+/// Analyses worth moving into a `.control` block.
+///
+/// Deliberately only the three that ngspice's `.measure` supports (it accepts
+/// DC, AC, TRAN and SP). Rewriting anything else is pure downside: `noise`,
+/// `disto` and `pz` emit *several* plots, and the `write` command captures
+/// only the current one — for `.noise` that is "Integrated Noise", which would
+/// silently drop the spectra that callers actually read.
+const ANALYSIS_CARDS: [&str; 3] = ["ac", "tran", "dc"];
+
+/// Rewrite a deck so `.measure` results reach stdout.
+///
+/// ngspice cannot emit measure results under `-b -r rawfile`, so the analysis
+/// card is moved into a `.control` block that writes the rawfile itself.
+/// Returns `None` when the deck needs no rewrite (no measures, no analysis
+/// card found, or a `.control` block is already present).
+fn control_block_deck(netlist: &str, raw_path: &std::path::Path) -> Option<String> {
+    let has_measure = netlist
+        .lines()
+        .any(|l| l.trim_start().to_lowercase().starts_with(".meas"));
+    if !has_measure {
+        return None;
+    }
+    // A hand-written control block already owns the run; don't fight it.
+    if netlist
+        .lines()
+        .any(|l| l.trim_start().to_lowercase().starts_with(".control"))
+    {
+        return None;
+    }
+
+    let analysis_idx = netlist.lines().position(|l| {
+        let lower = l.trim_start().to_lowercase();
+        ANALYSIS_CARDS
+            .iter()
+            .any(|c| lower.starts_with(&format!(".{} ", c)) || lower.trim_end() == format!(".{}", c))
+    })?;
+
+    let mut out = Vec::new();
+    for (i, line) in netlist.lines().enumerate() {
+        if i == analysis_idx {
+            // `.ac dec 10 1 1k` -> bare `ac dec 10 1 1k` inside the block
+            out.push(".control".to_string());
+            out.push(line.trim_start().trim_start_matches('.').to_string());
+            out.push(format!("write {}", raw_path.display()));
+            out.push(".endc".to_string());
+        } else {
+            out.push(line.to_string());
+        }
+    }
+    out.push(String::new());
+    Some(out.join("\n"))
+}
+
+#[cfg(test)]
+mod deck_tests {
+    use super::control_block_deck;
+    use std::path::Path;
+
+    const RAW: &str = "/tmp/out.raw";
+
+    #[test]
+    fn rewrites_ac_deck_when_measures_present() {
+        let deck = "* t\nR1 a b 1k\n.meas ac g find vdb(b) at=100\n.ac dec 10 1 1k\n.end\n";
+        let out = control_block_deck(deck, Path::new(RAW)).expect("should rewrite");
+        assert!(out.contains(".control\nac dec 10 1 1k\nwrite /tmp/out.raw\n.endc"));
+        // The dot-card must be gone, or ngspice runs the analysis twice.
+        assert!(!out.contains(".ac dec"));
+    }
+
+    #[test]
+    fn leaves_deck_alone_without_measures() {
+        let deck = "* t\nR1 a b 1k\n.ac dec 10 1 1k\n.end\n";
+        assert!(control_block_deck(deck, Path::new(RAW)).is_none());
+    }
+
+    #[test]
+    fn never_rewrites_noise_which_emits_multiple_plots() {
+        // `write` would capture only "Integrated Noise" and drop the spectra.
+        let deck = "* t\nR1 a b 1k\n.meas tran x find v(b) at=1\n.noise v(b) V1 dec 10 1 1k\n.end\n";
+        let out = control_block_deck(deck, Path::new(RAW));
+        assert!(out.is_none(), "noise must keep the -r path, got: {:?}", out);
+    }
+
+    #[test]
+    fn defers_to_a_hand_written_control_block() {
+        let deck = "* t\n.meas ac g find vdb(b) at=100\n.control\nrun\n.endc\n.ac dec 10 1 1k\n.end\n";
+        assert!(control_block_deck(deck, Path::new(RAW)).is_none());
+    }
+}
+
 impl Backend for NgspiceSubprocess {
     fn name(&self) -> &str {
         "ngspice-subprocess"
@@ -148,21 +238,31 @@ impl Backend for NgspiceSubprocess {
     }
 
     fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
-        // Write netlist to temp file
         let mut cir_file = NamedTempFile::with_suffix(".cir")?;
-        cir_file.write_all(netlist.as_bytes())?;
+        let cir_path_owned = cir_file.path().to_path_buf();
+        let raw_path = cir_path_owned.with_extension("raw");
+
+        // ngspice refuses to run `.measure` under `-b -r rawfile`:
+        //   "No .measure possible in batch mode (-b) with -r rawfile set!"
+        // When measures are present, move the analysis into a `.control` block
+        // that writes the rawfile itself. The analysis card must be *replaced*,
+        // not kept alongside `run`, or ngspice executes the analysis twice.
+        let deck = match control_block_deck(netlist, &raw_path) {
+            Some(rewritten) => rewritten,
+            None => netlist.to_string(),
+        };
+        let used_control_block = deck != netlist;
+
+        cir_file.write_all(deck.as_bytes())?;
         cir_file.flush()?;
+        let cir_path = cir_path_owned.as_path();
 
-        let cir_path = cir_file.path();
-        let raw_path = cir_path.with_extension("raw");
-
-        // Run ngspice in batch mode
-        let output = Command::new("ngspice")
-            .arg("-b")
-            .arg("-r")
-            .arg(&raw_path)
-            .arg(cir_path)
-            .output()?;
+        let mut cmd = Command::new("ngspice");
+        cmd.arg("-b");
+        if !used_control_block {
+            cmd.arg("-r").arg(&raw_path);
+        }
+        let output = cmd.arg(cir_path).output()?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -235,6 +335,9 @@ pub struct NgspiceShared {
 
 unsafe impl Send for NgspiceShared {}
 unsafe impl Sync for NgspiceShared {}
+
+/// One ngspice vector: (is_complex, real values, complex values as (re, im)).
+type VectorData = (bool, Vec<f64>, Vec<(f64, f64)>);
 
 impl NgspiceShared {
     /// Known paths to search for libngspice.so
@@ -481,7 +584,7 @@ impl NgspiceShared {
 
     /// Read a single vector's data by name. The name should be
     /// qualified with the plot name (e.g. "tran1.v(out)").
-    fn read_vector(&self, vecname: &str) -> Option<(bool, Vec<f64>, Vec<(f64, f64)>)> {
+    fn read_vector(&self, vecname: &str) -> Option<VectorData> {
         let c_name = CString::new(vecname).ok()?;
         unsafe {
             let info = (self.get_vec_info)(c_name.as_ptr());
@@ -699,11 +802,10 @@ extern "C" fn cb_send_char(msg: *const c_char, _id: c_int, userdata: *mut c_void
     }
     let state = unsafe { &*(userdata as *const CallbackState) };
     let s = unsafe { CStr::from_ptr(msg) };
-    if let Ok(text) = s.to_str() {
-        if let Ok(mut output) = state.output.lock() {
+    if let Ok(text) = s.to_str()
+        && let Ok(mut output) = state.output.lock() {
             output.push(text.to_string());
         }
-    }
     0
 }
 

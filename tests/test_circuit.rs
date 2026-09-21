@@ -1,5 +1,5 @@
-use pyspice::circuit::*;
-use pyspice::unit::*;
+use spicerack::circuit::*;
+use spicerack::unit::*;
 
 #[test]
 fn test_resistor_divider() {
@@ -274,8 +274,8 @@ fn test_unit_values_in_components() {
 }
 
 #[test]
-fn test_full_circuit_from_todo() {
-    // Reproduce the exact circuit from TODO.md section 1
+fn test_full_circuit_all_elements() {
+    // Full circuit exercising every element kind in one netlist
     let mut c = Circuit::new("folded_cascode");
     c.m("1", "drain_1", "gate_1", "source_1", "bulk", "nmos_3p3");
     c.m("2", "drain_2", "gate_2", "source_2", "bulk", "pmos_3p3");

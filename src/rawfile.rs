@@ -184,6 +184,19 @@ fn parse_raw_utf8(data: &[u8]) -> Result<RawData, RawFileError> {
     if num_vars == 0 || num_points == 0 {
         return Err(RawFileError::Format("No variables or points declared".into()));
     }
+    if result.variables.len() != num_vars {
+        return Err(RawFileError::Format(format!(
+            "Header declares {} variables but {} were listed",
+            num_vars,
+            result.variables.len()
+        )));
+    }
+    if let Some(v) = result.variables.iter().find(|v| v.index >= num_vars) {
+        return Err(RawFileError::Format(format!(
+            "Variable '{}' declares out-of-range index {} (num_vars = {})",
+            v.name, v.index, num_vars
+        )));
+    }
 
     // Detect FastAccess layout from flags
     let is_fast_access = result.flags.to_lowercase().contains("fastaccess");
@@ -210,7 +223,7 @@ fn parse_binary_data<R: Read>(
 ) -> Result<(), RawFileError> {
     if result.is_complex {
         // Complex: each value is 2x f64 (16 bytes)
-        result.complex_data = vec![Vec::with_capacity(num_points); num_vars];
+        result.complex_data = (0..num_vars).map(|_| Vec::with_capacity(num_points)).collect();
         let mut buf = [0u8; 16];
         for _point in 0..num_points {
             for var in 0..num_vars {
@@ -226,7 +239,7 @@ fn parse_binary_data<R: Read>(
             .collect();
     } else {
         // Real: each value is 1x f64 (8 bytes)
-        result.real_data = vec![Vec::with_capacity(num_points); num_vars];
+        result.real_data = (0..num_vars).map(|_| Vec::with_capacity(num_points)).collect();
         let mut buf = [0u8; 8];
         for _point in 0..num_points {
             for var in 0..num_vars {
@@ -251,7 +264,7 @@ fn parse_binary_data_fast_access<R: Read>(
     num_points: usize,
 ) -> Result<(), RawFileError> {
     if result.is_complex {
-        result.complex_data = vec![Vec::with_capacity(num_points); num_vars];
+        result.complex_data = (0..num_vars).map(|_| Vec::with_capacity(num_points)).collect();
         let mut buf = [0u8; 16];
         for var in 0..num_vars {
             for _point in 0..num_points {
@@ -265,7 +278,7 @@ fn parse_binary_data_fast_access<R: Read>(
             .map(|v| v.iter().map(|c| c.re).collect())
             .collect();
     } else {
-        result.real_data = vec![Vec::with_capacity(num_points); num_vars];
+        result.real_data = (0..num_vars).map(|_| Vec::with_capacity(num_points)).collect();
         let mut buf = [0u8; 8];
         for var in 0..num_vars {
             for _point in 0..num_points {
@@ -285,14 +298,14 @@ fn parse_ascii_data<R: BufRead>(
     num_vars: usize,
     num_points: usize,
 ) -> Result<(), RawFileError> {
-    result.real_data = vec![Vec::with_capacity(num_points); num_vars];
+    result.real_data = (0..num_vars).map(|_| Vec::with_capacity(num_points)).collect();
     if result.is_complex {
-        result.complex_data = vec![Vec::with_capacity(num_points); num_vars];
+        result.complex_data = (0..num_vars).map(|_| Vec::with_capacity(num_points)).collect();
     }
 
+    let mut line = String::new();
     for _point in 0..num_points {
         for var in 0..num_vars {
-            let mut line = String::new();
             loop {
                 line.clear();
                 reader.read_line(&mut line)?;
@@ -366,14 +379,15 @@ Values:\n\
     }
 
     /// Build a synthetic binary raw file in normal (row-major/interleaved) layout.
+    #[allow(clippy::needless_range_loop)]
     fn build_binary_raw(flags: &str, vars: &[(&str, &str)], data: &[Vec<f64>]) -> Vec<u8> {
         let num_vars = vars.len();
         let num_points = data[0].len();
         let mut buf = Vec::new();
 
         // Header
-        buf.extend_from_slice(format!("Title: test_binary\n").as_bytes());
-        buf.extend_from_slice(format!("Plotname: Transient Analysis\n").as_bytes());
+        buf.extend_from_slice("Title: test_binary\n".to_string().as_bytes());
+        buf.extend_from_slice("Plotname: Transient Analysis\n".to_string().as_bytes());
         buf.extend_from_slice(format!("Flags: {}\n", flags).as_bytes());
         buf.extend_from_slice(format!("No. Variables: {}\n", num_vars).as_bytes());
         buf.extend_from_slice(format!("No. Points: {}\n", num_points).as_bytes());
@@ -394,6 +408,7 @@ Values:\n\
     }
 
     /// Build a synthetic binary raw file in FastAccess (column-major) layout.
+    #[allow(clippy::needless_range_loop)]
     fn build_fast_access_raw(vars: &[(&str, &str)], data: &[Vec<f64>]) -> Vec<u8> {
         let num_vars = vars.len();
         let num_points = data[0].len();

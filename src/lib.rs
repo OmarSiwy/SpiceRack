@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 pub mod unit;
 pub mod circuit;
 pub mod rawfile;
@@ -10,9 +12,6 @@ pub mod measure_parse;
 pub mod lint;
 pub mod ir;
 pub mod codegen;
-
-#[cfg(feature = "cabi")]
-pub mod cabi;
 
 #[cfg(feature = "python")]
 #[allow(non_snake_case)]

@@ -50,51 +50,78 @@ pub fn parse_measures(text: &str, backend_name: &str) -> Vec<MeasureResult> {
 /// Lines containing "=" that look like measure results.
 /// NGSpice also prints "failed" for measures that didn't trigger.
 fn parse_ngspice(text: &str) -> Vec<MeasureResult> {
-    let mut results = Vec::new();
+    // ngspice groups real results under a "Measurements for <Analysis>" header:
+    //
+    //     Measurements for Transient Analysis
+    //
+    //     tplh   =  9.975241e-12 targ=  1.059975e-09 trig=  1.050000e-09
+    //
+    // Anchoring to that block matters because ngspice's resource footer ends
+    // with `Stack = 0 bytes.`, which a bare `name = value` scan reports as a
+    // measurement named "Stack". Trailing text after the value is legitimate
+    // (targ/trig/at/from/to), so the value cannot be required to stand alone.
+    let mut results: Vec<MeasureResult> = Vec::new();
+    let mut in_block = false;
+    let mut saw_block = false;
 
     for line in text.lines() {
         let trimmed = line.trim();
+
+        if trimmed.contains("Measurements for") {
+            in_block = true;
+            saw_block = true;
+            continue;
+        }
+        if !in_block {
+            continue;
+        }
         if trimmed.is_empty() {
             continue;
         }
-
-        // Skip lines that are clearly not measure results
-        if trimmed.starts_with("Circuit:") || trimmed.starts_with("No.") ||
-           trimmed.starts_with("Warning") || trimmed.starts_with("Note:") ||
-           trimmed.starts_with("Error") || trimmed.starts_with("Doing analysis") ||
-           trimmed.starts_with("Date:") || trimmed.starts_with("Using ") ||
-           trimmed.starts_with("**") || trimmed.starts_with("--") ||
-           trimmed.starts_with("Reducing") || trimmed.starts_with("run") {
-            continue;
-        }
-
-        // Match pattern: NAME = VALUE
-        if let Some((name_part, value_part)) = trimmed.split_once('=') {
-            let name = name_part.trim();
-            let value_str = value_part.trim();
-
-            // Skip if name is empty or contains spaces (not a simple measure name)
-            if name.is_empty() || name.contains(' ') {
-                continue;
-            }
-
-            // Handle "failed" measures
-            if value_str.starts_with("failed") {
-                continue;
-            }
-
-            // Try to parse the value (take first token in case there's extra text)
-            let first_token = value_str.split_whitespace().next().unwrap_or("");
-            if let Ok(value) = first_token.parse::<f64>() {
-                results.push(MeasureResult {
-                    name: name.to_string(),
-                    value,
-                });
-            }
+        match measure_line(trimmed) {
+            Some(result) => push_measure(&mut results, result),
+            // First non-measure line closes the block.
+            None => in_block = false,
         }
     }
 
+    if saw_block {
+        return results;
+    }
+
+    // No header (non-batch output, or a caller passing a bare fragment):
+    // fall back to scanning every line.
+    for line in text.lines() {
+        if let Some(result) = measure_line(line.trim()) {
+            push_measure(&mut results, result);
+        }
+    }
     results
+}
+
+/// Parse a single `name = value [extra...]` measure line.
+fn measure_line(trimmed: &str) -> Option<MeasureResult> {
+    let (name_part, value_part) = trimmed.split_once('=')?;
+    let name = name_part.trim();
+    if name.is_empty() || name.contains(char::is_whitespace) {
+        return None;
+    }
+    let value_str = value_part.trim();
+    if value_str.starts_with("failed") {
+        return None;
+    }
+    let value = value_str.split_whitespace().next()?.parse::<f64>().ok()?;
+    Some(MeasureResult { name: name.to_string(), value })
+}
+
+/// Later values win: a deck that reports a measure twice should not yield
+/// duplicate entries.
+fn push_measure(results: &mut Vec<MeasureResult>, result: MeasureResult) {
+    if let Some(existing) = results.iter_mut().find(|r| r.name == result.name) {
+        existing.value = result.value;
+    } else {
+        results.push(result);
+    }
 }
 
 /// Parse Xyce stdout for .meas results.
@@ -175,15 +202,14 @@ fn parse_ltspice(text: &str) -> Vec<MeasureResult> {
 
             // Try "KEY=value" format: "name: AVG=1.23e-09" or "name: FROM=... TO=... AVG=..."
             for part in rest.split_whitespace() {
-                if let Some((_key, val_str)) = part.split_once('=') {
-                    if let Ok(value) = val_str.parse::<f64>() {
+                if let Some((_key, val_str)) = part.split_once('=')
+                    && let Ok(value) = val_str.parse::<f64>() {
                         results.push(MeasureResult {
                             name: name.to_string(),
                             value,
                         });
                         break; // Take first parseable value
                     }
-                }
             }
         }
     }
@@ -215,6 +241,42 @@ gain_failed      =  failed
         assert!((results[1].value - 1.987e-9).abs() < 1e-20);
         assert_eq!(results[2].name, "vout_dc");
         assert!((results[2].value - 1.65).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_parse_ngspice_ignores_resource_footer() {
+        // Verbatim ngspice -b output shape. `Stack = 0 bytes.` parses as a
+        // `name = value` pair and was previously reported as a measurement.
+        let stdout = "\
+Circuit: * rc
+
+  Measurements for AC Analysis
+
+gain_100            =  -1.445070e+00
+tplh                =  9.975241e-12 targ=  1.059975e-09 trig=  1.050000e-09
+
+binary raw file \"/tmp/x.raw\"
+
+Total analysis time (seconds) = 0.0632234
+Stack = 0 bytes.
+Library pages =    2.059 MB.
+";
+        let results = parse_ngspice(stdout);
+        assert_eq!(results.len(), 2, "got {:?}", results);
+        assert_eq!(results[0].name, "gain_100");
+        assert!((results[0].value - -1.445070).abs() < 1e-9);
+        // Trailing targ=/trig= text must not break the value parse.
+        assert_eq!(results[1].name, "tplh");
+        assert!((results[1].value - 9.975241e-12).abs() < 1e-20);
+        assert!(!results.iter().any(|r| r.name == "Stack"));
+    }
+
+    #[test]
+    fn test_parse_ngspice_repeated_measure_keeps_last() {
+        let stdout = "  Measurements for Transient Analysis\n\ng = 1.0\ng = 2.0\n";
+        let results = parse_ngspice(stdout);
+        assert_eq!(results.len(), 1);
+        assert!((results[0].value - 2.0).abs() < 1e-12);
     }
 
     #[test]

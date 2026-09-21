@@ -457,10 +457,14 @@ fn parse_swept_values(
     let num_trace = traces.len();
     let total_vars = num_sweep + num_trace;
 
+    let bytes_per_point = compute_bytes_per_point(sweeps, traces);
+    let est_points = reader.remaining().checked_div(bytes_per_point).unwrap_or(0);
+
     let mut variables = Vec::with_capacity(total_vars);
-    let mut real_data: Vec<Vec<f64>> = vec![Vec::new(); total_vars];
+    let mut real_data: Vec<Vec<f64>> =
+        (0..total_vars).map(|_| Vec::with_capacity(est_points)).collect();
     let mut complex_data: Vec<Vec<Complex64>> = if has_complex {
-        vec![Vec::new(); total_vars]
+        (0..total_vars).map(|_| Vec::with_capacity(est_points)).collect()
     } else {
         Vec::new()
     };
@@ -485,8 +489,6 @@ fn parse_swept_values(
 
     // Read data points: each point has sweep values followed by trace values
     // We read until EOF or not enough data for a full point.
-    let bytes_per_point = compute_bytes_per_point(sweeps, traces);
-
     while reader.remaining() >= bytes_per_point {
         // Read sweep values (always real)
         for (i, sweep) in sweeps.iter().enumerate() {

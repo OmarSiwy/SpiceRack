@@ -3,16 +3,21 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "pyspice-rs"
-version = "1.0.0"
-description = "PySpice"
+name = "spicerack"
+version = "0.1.0"
+description = "Build SPICE circuits, generate netlists, run simulator backends, and read results"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
 requires-python = ">=3.10"
-dependencies = ["numpy"]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/OmarSiwy/SpiceRack"
 
 [tool.maturin]
 manifest-path = "Cargo.toml"
 features = ["python"]
-module-name = "pyspice_rs._native"
+module-name = "spicerack._native"
 python-source = "python"
 
 [tool.pytest.ini_options]

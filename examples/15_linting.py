@@ -4,7 +4,7 @@ Example 15: Backend Compatibility Check
 Builds a circuit with a deliberate missing-model reference and
 calls check_backend() to surface issues before simulation.
 """
-import pyspice_rs as ps
+import spicerack as ps
 
 # ── DUT with intentional issue ──
 

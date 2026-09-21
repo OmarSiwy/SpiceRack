@@ -354,11 +354,10 @@ impl CircuitIR {
                     flags.has_xspice = true;
                 }
                 Component::BehavioralVoltage { expression, .. }
-                | Component::BehavioralCurrent { expression, .. } => {
-                    if expression.contains("laplace") {
+                | Component::BehavioralCurrent { expression, .. }
+                    if expression.contains("laplace") => {
                         flags.has_laplace_sources = true;
                     }
-                }
                 _ => {}
             }
         }
@@ -445,8 +444,8 @@ impl CircuitIR {
             });
         }
 
-        if features.element_count > 10_000 {
-            if backend == "ngspice" || backend == "ngspice-subprocess" {
+        if features.element_count > 10_000
+            && (backend == "ngspice" || backend == "ngspice-subprocess") {
                 issues.push(Issue {
                     severity: IssueSeverity::Warning,
                     message: format!(
@@ -455,7 +454,6 @@ impl CircuitIR {
                     ),
                 });
             }
-        }
 
         issues
     }

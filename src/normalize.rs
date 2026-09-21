@@ -1,13 +1,13 @@
-/// Variable name normalization for cross-backend consistency.
-///
-/// Different SPICE backends use different naming conventions for node
-/// voltages, branch currents, and hierarchy separators. This module
-/// normalizes all names to a canonical lowercase form:
-///
-/// - Node voltages: strip `v()`/`V()` wrappers, lowercase
-/// - Branch currents: normalize to `i(name)` canonical format
-/// - Hierarchy separators: Xyce `%` and LTspice `:` become `.`
-/// - Sweep variables (`time`, `frequency`) pass through as-is
+//! Variable name normalization for cross-backend consistency.
+//!
+//! Different SPICE backends use different naming conventions for node
+//! voltages, branch currents, and hierarchy separators. This module
+//! normalizes all names to a canonical lowercase form:
+//!
+//! - Node voltages: strip `v()`/`V()` wrappers, lowercase
+//! - Branch currents: normalize to `i(name)` canonical format
+//! - Hierarchy separators: Xyce `%` and LTspice `:` become `.`
+//! - Sweep variables (`time`, `frequency`) pass through as-is
 
 /// Normalize a variable name from any backend to canonical form.
 ///
@@ -76,11 +76,10 @@ pub fn is_current_name(name: &str, backend: &str) -> bool {
     // Spectre/Vacask current notation: "V1:p", "I0:src"
     // These are terminal currents, identified by <name>:<terminal>
     // But only when NOT inside a v() wrapper (which would be hierarchy)
-    if backend == "spectre" || backend == "vacask" || backend == "vacask-shared" {
-        if !lower.starts_with("v(") && name.contains(':') {
+    if (backend == "spectre" || backend == "vacask" || backend == "vacask-shared")
+        && !lower.starts_with("v(") && name.contains(':') {
             return true;
         }
-    }
 
     false
 }
@@ -107,12 +106,11 @@ fn normalize_current(name: &str, backend: &str) -> String {
     }
 
     // Spectre/Vacask terminal current: "V1:p" -> "i(v1)"
-    if backend == "spectre" || backend == "vacask" || backend == "vacask-shared" {
-        if let Some(colon_pos) = name.find(':') {
+    if (backend == "spectre" || backend == "vacask" || backend == "vacask-shared")
+        && let Some(colon_pos) = name.find(':') {
             let device = name[..colon_pos].to_lowercase();
             return format!("i({})", device);
         }
-    }
 
     // Fallback: wrap in i()
     format!("i({})", lower)
@@ -337,9 +335,9 @@ mod tests {
 
     #[test]
     fn test_same_circuit_same_normalized_keys() {
-        let names_ng = vec!["time", "v(out)", "v(in)", "i(V1)"];
-        let names_xy = vec!["TIME", "V(OUT)", "V(IN)", "I(V1)"];
-        let names_sp = vec!["time", "out", "in", "V1:p"];
+        let names_ng = ["time", "v(out)", "v(in)", "i(V1)"];
+        let names_xy = ["TIME", "V(OUT)", "V(IN)", "I(V1)"];
+        let names_sp = ["time", "out", "in", "V1:p"];
 
         let norm_ng: Vec<String> = names_ng.iter()
             .map(|n| normalize_var_name(n, "ngspice"))

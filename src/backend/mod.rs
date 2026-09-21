@@ -44,7 +44,7 @@ pub trait Backend: Send + Sync {
     fn capabilities(&self) -> BackendCapabilities;
 
     /// The `CodeGen` that turns backend-neutral IR into this backend's netlist
-    /// dialect. This is the only path from IR to text (ADR-0001). The default
+    /// dialect. This is the only path from IR to text. The default
     /// emits the SPICE3/ngspice dialect; backends override to name their own.
     fn codegen(&self) -> Box<dyn CodeGen> {
         Box::new(Spice3CodeGen { dialect: Spice3Dialect::Ngspice })
@@ -76,6 +76,7 @@ pub enum BackendKind {
 }
 
 impl BackendKind {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "ngspice-subprocess" | "ngspice" => Some(Self::NgspiceSubprocess),
@@ -237,14 +238,6 @@ fn analysis_backend_preference(analysis_type: &str) -> &'static [&'static str] {
     }
 }
 
-/// Auto-detect and select best backend for given analysis type and circuit features
-pub fn detect_and_select(
-    analysis_type: &str,
-    override_backend: Option<&str>,
-) -> Result<Box<dyn Backend>, BackendError> {
-    detect_and_select_with_features(analysis_type, override_backend, &CircuitFeatures::default())
-}
-
 /// Auto-detect and select best backend, considering circuit features
 /// (XSPICE, OSDI) in addition to analysis type.
 pub fn detect_and_select_with_features(
@@ -322,6 +315,50 @@ fn create_backend_from_kind(kind: &BackendKind) -> Result<Box<dyn Backend>, Back
             Ok(Box::new(vacask::VacaskLibrary::new()?))
         }
         BackendKind::Spectre => Ok(Box::new(spectre::SpectreSubprocess)),
+    }
+}
+
+fn create_backend_by_name(name: &str, analysis_type: &str) -> Result<Box<dyn Backend>, BackendError> {
+    // Check for analysis compatibility with the requested backend
+    let incompatible = match name {
+        "xyce" | "xyce-serial" | "xyce-parallel" => {
+            matches!(analysis_type, "pz" | "disto")
+        }
+        "ltspice" => {
+            matches!(analysis_type, "pz" | "disto" | "sens" | "sens_ac" | "hb" | "pss" | "stb")
+        }
+        "vacask" => {
+            matches!(analysis_type, "pz" | "disto" | "sens" | "sens_ac" | "dc")
+        }
+        _ => false,
+    };
+
+    if incompatible {
+        return Err(BackendError::UnsupportedAnalysis {
+            analysis: analysis_type.to_string(),
+            backend: name.to_string(),
+            required: analysis_backend_preference(analysis_type).first().unwrap_or(&"ngspice").to_string(),
+            install_cmd: "See docs/backends/ for installation instructions".to_string(),
+            alternative: "See docs/backends/analysis-map.md for emulation strategies".to_string(),
+        });
+    }
+
+    match name {
+        "ngspice-subprocess" | "ngspice" => Ok(Box::new(ngspice::NgspiceSubprocess)),
+        "ngspice-shared" => Ok(Box::new(ngspice::NgspiceShared::new()?)),
+        "xyce-serial" | "xyce" => Ok(Box::new(xyce::XyceSubprocess { parallel: false })),
+        "xyce-parallel" => Ok(Box::new(xyce::XyceSubprocess { parallel: true })),
+        "ltspice" => {
+            if let Some((exe, wine)) = ltspice::detect_ltspice() {
+                Ok(Box::new(ltspice::LtspiceSubprocess { executable: exe, use_wine: wine, fast_access: false }))
+            } else {
+                Err(BackendError::SimulationError("LTspice not found on this system".to_string()))
+            }
+        }
+        "vacask" => Ok(Box::new(vacask::VacaskSubprocess)),
+        "vacask-shared" => Ok(Box::new(vacask::VacaskLibrary::new()?)),
+        "spectre" => Ok(Box::new(spectre::SpectreSubprocess)),
+        _ => Err(BackendError::SimulationError(format!("Unknown backend: {}", name))),
     }
 }
 
@@ -589,48 +626,4 @@ mod tests {
         assert_eq!(f.element_count, 0);
     }
 
-}
-
-fn create_backend_by_name(name: &str, analysis_type: &str) -> Result<Box<dyn Backend>, BackendError> {
-    // Check for analysis compatibility with the requested backend
-    let incompatible = match name {
-        "xyce" | "xyce-serial" | "xyce-parallel" => {
-            matches!(analysis_type, "pz" | "disto")
-        }
-        "ltspice" => {
-            matches!(analysis_type, "pz" | "disto" | "sens" | "sens_ac" | "hb" | "pss" | "stb")
-        }
-        "vacask" => {
-            matches!(analysis_type, "pz" | "disto" | "sens" | "sens_ac" | "dc")
-        }
-        _ => false,
-    };
-
-    if incompatible {
-        return Err(BackendError::UnsupportedAnalysis {
-            analysis: analysis_type.to_string(),
-            backend: name.to_string(),
-            required: analysis_backend_preference(analysis_type).first().unwrap_or(&"ngspice").to_string(),
-            install_cmd: "See docs/backends/ for installation instructions".to_string(),
-            alternative: "See docs/backends/analysis-map.md for emulation strategies".to_string(),
-        });
-    }
-
-    match name {
-        "ngspice-subprocess" | "ngspice" => Ok(Box::new(ngspice::NgspiceSubprocess)),
-        "ngspice-shared" => Ok(Box::new(ngspice::NgspiceShared::new()?)),
-        "xyce-serial" | "xyce" => Ok(Box::new(xyce::XyceSubprocess { parallel: false })),
-        "xyce-parallel" => Ok(Box::new(xyce::XyceSubprocess { parallel: true })),
-        "ltspice" => {
-            if let Some((exe, wine)) = ltspice::detect_ltspice() {
-                Ok(Box::new(ltspice::LtspiceSubprocess { executable: exe, use_wine: wine, fast_access: false }))
-            } else {
-                Err(BackendError::SimulationError("LTspice not found on this system".to_string()))
-            }
-        }
-        "vacask" => Ok(Box::new(vacask::VacaskSubprocess)),
-        "vacask-shared" => Ok(Box::new(vacask::VacaskLibrary::new()?)),
-        "spectre" => Ok(Box::new(spectre::SpectreSubprocess)),
-        _ => Err(BackendError::SimulationError(format!("Unknown backend: {}", name))),
-    }
 }

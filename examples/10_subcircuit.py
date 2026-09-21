@@ -5,8 +5,8 @@ Defines an NMOS inverter subcircuit and instantiates it twice
 (buffer = double inversion) using X().
 Demonstrates Subcircuit definition + add_subcircuit + X element.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm
 
 # ── Inner subcircuit: resistive-load NMOS inverter ──
 

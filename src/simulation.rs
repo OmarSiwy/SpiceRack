@@ -1,6 +1,7 @@
 use crate::circuit::Circuit;
 use crate::result::*;
 use crate::backend::{Backend, BackendError, detect_and_select_with_features, CircuitFeatures, detect};
+use crate::codegen::CodeGenError;
 
 /// Parameter sweep definition for `.step` directives
 #[derive(Debug, Clone)]
@@ -33,7 +34,7 @@ pub struct CircuitSimulator {
     /// Backend-neutral IR for this simulation. When present, the netlist is
     /// emitted by the selected backend's `CodeGen` (the production path);
     /// when absent (legacy Rust/cabi callers) the string `build_netlist` path
-    /// is used. See ADR-0001 / issue 01.
+    /// is used.
     ir: Option<crate::ir::CircuitIR>,
 }
 
@@ -76,15 +77,10 @@ impl CircuitSimulator {
     /// The netlist the given backend will actually run, sourced from its
     /// `CodeGen`. Requires an attached IR; this is the IR→text path that
     /// replaces string translation.
-    pub fn netlist_to_run(&self, backend: &dyn Backend) -> Result<String, BackendError> {
+    pub fn netlist_to_run(&self, backend: &dyn Backend) -> Result<String, CodeGenError> {
         match &self.ir {
-            Some(ir) => backend
-                .codegen()
-                .emit_netlist(ir)
-                .map_err(|e| BackendError::SimulationError(e.to_string())),
-            None => Err(BackendError::SimulationError(
-                "no IR attached to simulator".into(),
-            )),
+            Some(ir) => backend.codegen().emit_netlist(ir),
+            None => Err(CodeGenError::Other("no IR attached to simulator".into())),
         }
     }
 
@@ -115,6 +111,10 @@ impl CircuitSimulator {
 
     pub fn set_save_currents(&mut self, v: bool) {
         self.save_currents = v;
+    }
+
+    pub fn save_currents(&self) -> bool {
+        self.save_currents
     }
 
     pub fn set_temperature(&mut self, temp: f64) {
@@ -429,37 +429,6 @@ impl CircuitSimulator {
         let analysis = format!(".trannoise {} {}", step_time, end_time);
         let raw = self.run(&analysis, "trannoise")?;
         Ok(TransientNoiseAnalysis::from_raw(raw))
-    }
-
-    /// Fourier analysis — post-processes transient data
-    /// Returns parsed stdout (batch mode only for ngspice)
-    pub fn fourier(
-        &self,
-        fundamental_frequency: f64,
-        output_variables: &[&str],
-        num_harmonics: Option<u32>,
-    ) -> Result<TransientAnalysis, BackendError> {
-        // Fourier requires a transient run — we add .four after .tran
-        // The .four results come from stdout, but the .tran data goes to raw
-        let mut four_stmt = format!(".four {}", fundamental_frequency);
-        if let Some(n) = num_harmonics {
-            four_stmt.push_str(&format!(" {}", n));
-        }
-        for var in output_variables {
-            four_stmt.push_str(&format!(" {}", var));
-        }
-
-        // We need a .tran that covers enough periods
-        let period = 1.0 / fundamental_frequency;
-        let num_periods = 10.0;
-        let tran_stop = period * num_periods;
-        let tran_step = period / 100.0;
-        let tran_stmt = format!(".tran {} {}", tran_step, tran_stop);
-
-        // Build composite netlist with both .tran and .four
-        let combined = format!("{}\n{}", tran_stmt, four_stmt);
-        let raw = self.run(&combined, "tran")?;
-        Ok(TransientAnalysis::from_raw(raw))
     }
 
     // ── Spectre-specific analyses ──
@@ -777,18 +746,23 @@ impl CircuitSimulator {
             analysis_type, self.backend_override.as_deref(), &features
         )?;
         let backend_name = backend.name().to_string();
-        // IR present → emit the netlist via the backend's CodeGen (the only
-        // IR→text path). Analyses whose `emit_analysis` arm is not yet
-        // implemented (Pss/HB/SPar/Stability/TransientNoise/Spectre*, issue 05)
-        // fall back to the legacy single-dialect string so they don't regress.
-        // Absent IR (legacy Rust/cabi callers) → legacy string build.
-        // IR present → codegen emits backend-native text, run_netlist
-        // executes verbatim. No IR → legacy SPICE string, run() applies
-        // any backend-specific translation (e.g. spice_to_vacask).
+        // IR present → codegen emits backend-native text and run_netlist executes
+        // it verbatim. No IR → legacy SPICE string, and run() applies any
+        // backend-specific translation (e.g. spice_to_vacask).
         let mut raw = if self.ir.is_some() {
-            let netlist = self
-                .netlist_to_run(backend.as_ref())
-                .unwrap_or_else(|_| self.build_netlist(analysis_stmt));
+            let netlist = match self.netlist_to_run(backend.as_ref()) {
+                Ok(n) => n,
+                // Analyses whose `emit_analysis` arm is not yet implemented
+                // (Pss/HB/SPar/Stability/TransientNoise/Spectre*) fall back to
+                // the legacy single-dialect string so they don't regress.
+                Err(CodeGenError::UnsupportedAnalysis { .. }) => {
+                    self.build_netlist(analysis_stmt)
+                }
+                // Anything else (e.g. a component this backend cannot express)
+                // must surface — falling back would silently simulate a
+                // different netlist than the user built.
+                Err(e) => return Err(BackendError::SimulationError(e.to_string())),
+            };
             backend.run_netlist(&netlist)?
         } else {
             let netlist = self.build_netlist(analysis_stmt);

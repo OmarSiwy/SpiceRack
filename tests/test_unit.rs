@@ -1,4 +1,4 @@
-use pyspice::unit::*;
+use spicerack::unit::*;
 
 macro_rules! assert_approx {
     ($a:expr, $b:expr) => {

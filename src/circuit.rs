@@ -314,15 +314,50 @@ pub struct VoltageSource {
     pub nm: Node,
     pub value: ComponentValue,
     pub waveform: Option<Waveform>,
+    /// AC small-signal magnitude; emits `AC <mag> [phase]` when set.
+    pub ac_magnitude: Option<f64>,
+    pub ac_phase: Option<f64>,
 }
 
 impl fmt::Display for VoltageSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "V{} {} {} {}", self.name, self.np, self.nm, self.value.to_spice())?;
+        if let Some(mag) = self.ac_magnitude {
+            write!(f, " AC {}", mag)?;
+            if let Some(phase) = self.ac_phase {
+                write!(f, " {}", phase)?;
+            }
+        }
         if let Some(ref wf) = self.waveform {
             write!(f, " {}", wf)?;
         }
         Ok(())
+    }
+}
+
+impl Circuit {
+    /// The most recently added element. Panics on an empty circuit, which
+    /// cannot happen at the call sites (they push immediately before).
+    pub fn last_element_mut(&mut self) -> &mut Element {
+        self.elements.last_mut().expect("circuit has no elements")
+    }
+}
+
+impl Element {
+    /// Attach an AC small-signal spec to a voltage or current source.
+    /// No-op on any other element kind.
+    pub fn set_ac(&mut self, magnitude: f64, phase: Option<f64>) {
+        match self {
+            Element::V(v) => {
+                v.ac_magnitude = Some(magnitude);
+                v.ac_phase = phase;
+            }
+            Element::I(i) => {
+                i.ac_magnitude = Some(magnitude);
+                i.ac_phase = phase;
+            }
+            _ => {}
+        }
     }
 }
 
@@ -333,11 +368,20 @@ pub struct CurrentSource {
     pub nm: Node,
     pub value: ComponentValue,
     pub waveform: Option<Waveform>,
+    /// AC small-signal magnitude; emits `AC <mag> [phase]` when set.
+    pub ac_magnitude: Option<f64>,
+    pub ac_phase: Option<f64>,
 }
 
 impl fmt::Display for CurrentSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "I{} {} {} {}", self.name, self.np, self.nm, self.value.to_spice())?;
+        if let Some(mag) = self.ac_magnitude {
+            write!(f, " AC {}", mag)?;
+            if let Some(phase) = self.ac_phase {
+                write!(f, " {}", phase)?;
+            }
+        }
         if let Some(ref wf) = self.waveform {
             write!(f, " {}", wf)?;
         }
@@ -1025,6 +1069,8 @@ impl Circuit {
             nm: nm.into(),
             value: value.into(),
             waveform: None,
+            ac_magnitude: None,
+            ac_phase: None,
         }));
         self.elements.last().unwrap()
     }
@@ -1043,6 +1089,8 @@ impl Circuit {
             nm: nm.into(),
             value: value.into(),
             waveform: Some(waveform),
+            ac_magnitude: None,
+            ac_phase: None,
         }));
         self.elements.last().unwrap()
     }
@@ -1060,6 +1108,8 @@ impl Circuit {
             nm: nm.into(),
             value: value.into(),
             waveform: None,
+            ac_magnitude: None,
+            ac_phase: None,
         }));
         self.elements.last().unwrap()
     }
@@ -1432,6 +1482,8 @@ impl Circuit {
                 damping: 0.0,
                 phase: 0.0,
             })),
+            ac_magnitude: None,
+            ac_phase: None,
         }));
         self.elements.last().unwrap()
     }
@@ -1462,6 +1514,8 @@ impl Circuit {
                 pulse_width,
                 period,
             })),
+            ac_magnitude: None,
+            ac_phase: None,
         }));
         self.elements.last().unwrap()
     }
@@ -1479,6 +1533,8 @@ impl Circuit {
             nm: nm.into(),
             value: ComponentValue::Numeric(0.0),
             waveform: Some(Waveform::Pwl(PwlWaveform { values })),
+            ac_magnitude: None,
+            ac_phase: None,
         }));
         self.elements.last().unwrap()
     }
@@ -1506,6 +1562,8 @@ impl Circuit {
                 damping: 0.0,
                 phase: 0.0,
             })),
+            ac_magnitude: None,
+            ac_phase: None,
         }));
         self.elements.last().unwrap()
     }
@@ -1536,6 +1594,8 @@ impl Circuit {
                 pulse_width,
                 period,
             })),
+            ac_magnitude: None,
+            ac_phase: None,
         }));
         self.elements.last().unwrap()
     }

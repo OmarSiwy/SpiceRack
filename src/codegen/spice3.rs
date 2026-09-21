@@ -86,14 +86,6 @@ impl Spice3CodeGen {
         s
     }
 
-    #[allow(dead_code)]
-    fn hierarchy_separator(&self) -> &str {
-        match self.dialect {
-            Spice3Dialect::Xyce => ":",
-            _ => ".",
-        }
-    }
-
     fn map_option_name(&self, canonical: &str) -> String {
         match self.dialect {
             Spice3Dialect::Ngspice => match canonical {
@@ -289,10 +281,25 @@ impl CodeGen for Spice3CodeGen {
             }
 
             // Saves — Xyce uses .PRINT, ngspice/LTspice use .save
-            for save in &tb.saves {
-                match self.dialect {
-                    Spice3Dialect::Xyce => lines.push(format!(".PRINT DC {}", save)),
-                    _ => lines.push(format!(".save {}", save)),
+            //
+            // A noise run produces `onoise_spectrum`/`inoise_spectrum`, not node
+            // voltages, so a node-name save list can never name them. ngspice then
+            // reports "no data saved for Noise analysis; analysis not run" and the
+            // run fails outright. Saving everything is the only correct list here.
+            let has_noise = tb
+                .analyses
+                .iter()
+                .any(|a| matches!(a, Analysis::Noise { .. }));
+            if has_noise {
+                if self.dialect != Spice3Dialect::Xyce {
+                    lines.push(".save all".to_string());
+                }
+            } else {
+                for save in &tb.saves {
+                    match self.dialect {
+                        Spice3Dialect::Xyce => lines.push(format!(".PRINT DC {}", save)),
+                        _ => lines.push(format!(".save {}", save)),
+                    }
                 }
             }
 

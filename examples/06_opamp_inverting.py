@@ -5,8 +5,8 @@ Ideal opamp modeled as BV (behavioral voltage source):
   Vout = 1e6 * (V(inp) - V(inn))
 Configured as inverting amp: Gain = -Rf/Rin = -10k/1k = -10.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm
 
 # ── DUT ──
 

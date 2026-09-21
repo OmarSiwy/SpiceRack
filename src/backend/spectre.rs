@@ -142,7 +142,7 @@ fn run_spectre_native(netlist: &str) -> Result<RawData, BackendError> {
 /// Wrap a SPICE netlist so Spectre can read it using `simulator lang=spice`.
 fn wrap_spice_for_spectre(spice: &str) -> String {
     let mut out = String::with_capacity(spice.len() + 200);
-    out.push_str("// PySpice auto-generated Spectre wrapper\n");
+    out.push_str("// SpiceRack auto-generated Spectre wrapper\n");
 
     // Extract pre_osdi lines and convert to Spectre's ahdl_include.
     // Spectre can load Verilog-A source directly (.va) or OSDI (.osdi).
@@ -188,40 +188,35 @@ pub fn find_output_file(dir: &Path) -> Result<(PathBuf, OutputFormat), BackendEr
             if !path.is_file() {
                 continue;
             }
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if nutmeg_extensions.contains(&ext) {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str())
+                && nutmeg_extensions.contains(&ext) {
                     return Ok((path, OutputFormat::Nutmeg));
                 }
-            }
         }
     }
 
     // Second pass: look for PSF directory
     let psf_dir = dir.join("psf");
-    if psf_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&psf_dir) {
+    if psf_dir.is_dir()
+        && let Ok(entries) = std::fs::read_dir(&psf_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() {
-                    if let Ok(bytes) = std::fs::read(&path) {
-                        if psf::is_psf(&bytes) {
+                if path.is_file()
+                    && let Ok(bytes) = std::fs::read(&path)
+                        && psf::is_psf(&bytes) {
                             return Ok((path, OutputFormat::Psf));
                         }
-                    }
-                }
             }
         }
-    }
 
     // Third pass: files with .psf extension
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if ext == "psf" {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str())
+                && ext == "psf" {
                     return Ok((path, OutputFormat::Psf));
                 }
-            }
         }
     }
 
@@ -246,11 +241,6 @@ pub fn find_output_file(dir: &Path) -> Result<(PathBuf, OutputFormat), BackendEr
     Err(BackendError::SimulationError(
         "No output file produced by spectre".to_string(),
     ))
-}
-
-/// Legacy function kept for backward compatibility. Prefer `find_output_file`.
-pub fn find_nutmeg_file(dir: &Path) -> Result<PathBuf, BackendError> {
-    find_output_file(dir).map(|(path, _)| path)
 }
 
 // ── Spectre sweep and Monte Carlo wrappers ──
@@ -455,7 +445,7 @@ fn build_sweep_netlist(
     inner_analysis: &str,
 ) -> String {
     let mut out = String::with_capacity(spice_netlist.len() + 256);
-    out.push_str("// PySpice auto-generated Spectre sweep\n");
+    out.push_str("// SpiceRack auto-generated Spectre sweep\n");
     out.push_str("simulator lang=spice\n\n");
 
     // Emit the SPICE netlist but strip .end and analysis statements
@@ -494,7 +484,7 @@ fn build_montecarlo_netlist(
     seed: Option<u64>,
 ) -> String {
     let mut out = String::with_capacity(spice_netlist.len() + 256);
-    out.push_str("// PySpice auto-generated Spectre Monte Carlo\n");
+    out.push_str("// SpiceRack auto-generated Spectre Monte Carlo\n");
     out.push_str("simulator lang=spice\n\n");
 
     for line in spice_netlist.lines() {
@@ -527,7 +517,7 @@ fn build_montecarlo_netlist(
 /// Build a Spectre netlist with SpectreRF analysis lines appended in Spectre-native syntax.
 fn build_spectrerf_netlist(spice_netlist: &str, analysis_lines: &[&str]) -> String {
     let mut out = String::with_capacity(spice_netlist.len() + 512);
-    out.push_str("// PySpice auto-generated Spectre RF analysis\n");
+    out.push_str("// SpiceRack auto-generated Spectre RF analysis\n");
     out.push_str("simulator lang=spice\n\n");
 
     for line in spice_netlist.lines() {

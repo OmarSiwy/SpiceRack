@@ -4,8 +4,8 @@ Example 16: Simulator Configuration
 Demonstrates Testbench config: temperature, options, save, measure,
 step sweep, initial_condition, node_set.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm, u_uF
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm, u_uF
 
 # ── DUT ──
 

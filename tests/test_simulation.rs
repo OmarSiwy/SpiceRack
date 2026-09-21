@@ -1,4 +1,4 @@
-use pyspice::circuit::*;
+use spicerack::circuit::*;
 
 #[test]
 fn test_simulator_netlist_op() {
@@ -407,13 +407,14 @@ fn test_step_with_options_and_measures() {
 
 #[test]
 fn test_fft_metrics_pure_tone() {
-    use pyspice::result::compute_fft_metrics;
+    use spicerack::result::compute_fft_metrics;
 
     // Simulate a pure tone: large fundamental, small noise floor
     let mut magnitude = vec![0.0; 64];
     magnitude[0] = 0.01;   // DC
     magnitude[4] = 1.0;    // fundamental at bin 4
     // Everything else is noise floor
+    #[allow(clippy::needless_range_loop)]
     for i in 1..64 {
         if i != 4 {
             magnitude[i] = 0.001;
@@ -437,7 +438,7 @@ fn test_fft_metrics_pure_tone() {
 
 #[test]
 fn test_fft_metrics_with_harmonics() {
-    use pyspice::result::compute_fft_metrics;
+    use spicerack::result::compute_fft_metrics;
 
     let mut magnitude = vec![0.001; 64];
     magnitude[0] = 0.01;    // DC
@@ -462,7 +463,7 @@ fn test_fft_metrics_with_harmonics() {
 
 #[test]
 fn test_fft_metrics_empty() {
-    use pyspice::result::compute_fft_metrics;
+    use spicerack::result::compute_fft_metrics;
 
     let (enob, sfdr_db, snr_db, thd_db) = compute_fft_metrics(&[]);
     assert_eq!(enob, 0.0);
@@ -482,11 +483,11 @@ fn test_fft_metrics_empty() {
 #[test]
 fn test_spectre_sweep_netlist_build() {
     // Test the internal Spectre sweep netlist builder
-    use pyspice::backend::spectre::SpectreSubprocess;
+    use spicerack::backend::spectre::SpectreSubprocess;
 
     let backend = SpectreSubprocess;
     // Just verify the struct exists and the backend name is correct
-    assert_eq!(pyspice::backend::Backend::name(&backend), "spectre");
+    assert_eq!(spicerack::backend::Backend::name(&backend), "spectre");
 }
 
 #[test]

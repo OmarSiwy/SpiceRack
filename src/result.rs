@@ -53,22 +53,45 @@ impl RawData {
 #[derive(Debug, Clone)]
 pub struct WaveForm {
     pub name: String,
+    /// Real part. For a complex plot this is `Re`, not the magnitude.
     pub data: Vec<f64>,
-    pub complex_data: Option<Vec<Complex64>>,
+    /// Present only for complex plots (AC, noise). Kept so magnitude and
+    /// phase are reachable: `data` alone cannot reconstruct them.
+    pub complex: Option<Vec<Complex64>>,
 }
 
 impl WaveForm {
     pub fn real(name: String, data: Vec<f64>) -> Self {
-        Self { name, data, complex_data: None }
+        Self { name, data, complex: None }
     }
 
-    pub fn complex(name: String, data: Vec<Complex64>) -> Self {
-        let real_data = data.iter().map(|c| c.re).collect();
+    pub fn complex(name: String, data: &[Complex64]) -> Self {
         Self {
             name,
-            data: real_data,
-            complex_data: Some(data),
+            data: data.iter().map(|c| c.re).collect(),
+            complex: Some(data.to_vec()),
         }
+    }
+
+    /// `sqrt(re^2 + im^2)` per point; `None` for a real-valued plot.
+    pub fn magnitude(&self) -> Option<Vec<f64>> {
+        self.complex
+            .as_ref()
+            .map(|c| c.iter().map(|v| v.norm()).collect())
+    }
+
+    /// Magnitude in dB (`20*log10`); `None` for a real-valued plot.
+    pub fn magnitude_db(&self) -> Option<Vec<f64>> {
+        self.complex
+            .as_ref()
+            .map(|c| c.iter().map(|v| 20.0 * v.norm().log10()).collect())
+    }
+
+    /// Phase in degrees. ngspice's own `vp()` reports radians; this does not.
+    pub fn phase_deg(&self) -> Option<Vec<f64>> {
+        self.complex
+            .as_ref()
+            .map(|c| c.iter().map(|v| v.arg().to_degrees()).collect())
     }
 
     pub fn len(&self) -> usize {
@@ -106,7 +129,7 @@ impl AnalysisBase {
 
         for var in &raw.variables {
             let wf = if raw.is_complex {
-                WaveForm::complex(var.name.clone(), raw.complex_data[var.index].clone())
+                WaveForm::complex(var.name.clone(), &raw.complex_data[var.index])
             } else {
                 WaveForm::real(var.name.clone(), raw.real_data[var.index].clone())
             };
@@ -269,17 +292,14 @@ impl SensitivityAnalysis {
 #[derive(Debug, Clone)]
 pub struct PoleZeroAnalysis {
     pub base: AnalysisBase,
-    pub poles: Vec<Complex64>,
-    pub zeros: Vec<Complex64>,
 }
 
 impl PoleZeroAnalysis {
+    /// Poles and zeros arrive as ordinary named vectors in the raw file and are
+    /// reached through `base` (e.g. `pz["pole(1)"]`).
     pub fn from_raw(raw: RawData) -> Self {
-        // TODO: parse pole/zero data from raw
         Self {
             base: AnalysisBase::from_raw(&raw),
-            poles: Vec::new(),
-            zeros: Vec::new(),
         }
     }
 }
@@ -390,24 +410,6 @@ impl StabilityAnalysis {
             frequency,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct FourierAnalysis {
-    pub fundamental_frequency: f64,
-    pub dc_component: f64,
-    pub harmonics: Vec<FourierHarmonic>,
-    pub thd_percent: f64,
-}
-
-#[derive(Debug, Clone)]
-pub struct FourierHarmonic {
-    pub number: u32,
-    pub frequency: f64,
-    pub magnitude: f64,
-    pub phase_deg: f64,
-    pub normalized_magnitude: f64,
-    pub normalized_phase_deg: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -621,4 +623,26 @@ pub fn compute_fft_metrics(magnitude: &[f64]) -> (f64, f64, f64, f64) {
     let enob = (sinad_db - 1.76) / 6.02;
 
     (enob, sfdr_db, snr_db, thd_db)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_waveform_complex_magnitude_and_phase() {
+        // 3-4-5 triangle: |3+4i| = 5, arg = 53.13 deg
+        let wf = WaveForm::complex("h".into(), &[Complex64::new(3.0, 4.0)]);
+        assert!((wf.data[0] - 3.0).abs() < 1e-12, "data must stay the real part");
+        assert!((wf.magnitude().unwrap()[0] - 5.0).abs() < 1e-12);
+        assert!((wf.phase_deg().unwrap()[0] - 53.13010235).abs() < 1e-6);
+        assert!((wf.magnitude_db().unwrap()[0] - 20.0 * 5.0f64.log10()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_waveform_real_has_no_complex_part() {
+        let wf = WaveForm::real("v".into(), vec![1.0, 2.0]);
+        assert!(wf.magnitude().is_none());
+        assert!(wf.phase_deg().is_none());
+    }
 }

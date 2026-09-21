@@ -1,5 +1,5 @@
 {
-  description = "PySpice-rs: PySpice core rewritten in Rust";
+  description = "SpiceRack: SpiceRack core rewritten in Rust";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -34,14 +34,14 @@
               || baseName == ".git");
         };
 
-        pyspiceRs = pkgs.python312Packages.buildPythonPackage {
-          pname = "pyspice-rs";
+        spicerackRs = pkgs.python312Packages.buildPythonPackage {
+          pname = "spicerack";
           version = "0.1.0";
           format = "pyproject";
           src = srcFiltered;
 
           cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
-            name = "pyspice-rs-vendor";
+            name = "spicerack-vendor";
             hash = "sha256-SBJFkUj7mqqcZ1tmDQXejj7NkPbvO6c85nqpYH9O6n0=";
             src = srcFiltered;
           };
@@ -62,7 +62,7 @@
             pkgs.python312Packages.numpy
           ];
 
-          pythonImportsCheck = [ "pyspice_rs" ];
+          pythonImportsCheck = [ "spicerack" ];
         };
       in {
         devShells.default = pkgs.mkShell {
@@ -80,7 +80,7 @@
           ];
 
           shellHook = ''
-            echo "PySpice-rs dev shell"
+            echo "SpiceRack dev shell"
             echo "  rust: $(rustc --version)"
             echo "  python: $(python3 --version)"
             echo "  ngspice: $(ngspice --version 2>&1 | head -1)"
@@ -88,14 +88,14 @@
             # ── openvaf-r -> openvaf alias ──
             if command -v openvaf-r &>/dev/null && ! command -v openvaf &>/dev/null; then
               alias openvaf=openvaf-r
-              mkdir -p "''${XDG_CACHE_HOME:-$HOME/.cache}/despice-bin"
-              ln -sf "$(command -v openvaf-r)" "''${XDG_CACHE_HOME:-$HOME/.cache}/despice-bin/openvaf"
-              export PATH="''${XDG_CACHE_HOME:-$HOME/.cache}/despice-bin:$PATH"
+              mkdir -p "''${XDG_CACHE_HOME:-$HOME/.cache}/spicerack-bin"
+              ln -sf "$(command -v openvaf-r)" "''${XDG_CACHE_HOME:-$HOME/.cache}/spicerack-bin/openvaf"
+              export PATH="''${XDG_CACHE_HOME:-$HOME/.cache}/spicerack-bin:$PATH"
             fi
 
             # ── CIEL PDK manager ──
             export PDK_ROOT="''${CIEL_HOME:-$HOME/.ciel}"
-            CIEL_VENV="''${XDG_CACHE_HOME:-$HOME/.cache}/despice-ciel-venv"
+            CIEL_VENV="''${XDG_CACHE_HOME:-$HOME/.cache}/spicerack-ciel-venv"
             if [ ! -f "$CIEL_VENV/bin/ciel" ]; then
               echo "Installing ciel PDK manager..."
               python3 -m venv "$CIEL_VENV" 2>/dev/null
@@ -127,7 +127,7 @@
         };
 
         packages = {
-          default = pyspiceRs;
+          default = spicerackRs;
           inherit openvaf vacask xyce;
         };
       }

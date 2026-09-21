@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemify.dev/schemas/circuit-ir.schema.json",
-  "title": "PySpice-rs Circuit IR",
-  "description": "Backend-neutral intermediate representation for SPICE circuits. This is the contract between Schemify's Zig editor and the PySpice-rs simulation backend.",
+  "title": "SpiceRack Circuit IR",
+  "description": "Backend-neutral intermediate representation for SPICE circuits. This is the contract between Schemify's Zig editor and the SpiceRack simulation backend.",
   "type": "object",
   "required": ["top", "subcircuit_defs", "model_libraries"],
   "properties": {

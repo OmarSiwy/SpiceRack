@@ -11,16 +11,16 @@ ngspice .lib section syntax).
 
 Requires PDK_ROOT, PDKs via ciel, ngspice on PATH.
 
-Set DESPICE_RUN_PDK_EXAMPLES=1 to run ngspice. By default this example only
+Set SPICERACK_RUN_PDK_EXAMPLES=1 to run ngspice. By default this example only
 generates matrix netlists so documentation tests do not depend on local PDK
 simulator compatibility.
 """
 import os
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm
 
 PDK_ROOT = os.environ.get("PDK_ROOT", os.path.expanduser("~/.ciel"))
-RUN_SIMULATION = os.environ.get("DESPICE_RUN_PDK_EXAMPLES") == "1"
+RUN_SIMULATION = os.environ.get("SPICERACK_RUN_PDK_EXAMPLES") == "1"
 
 # ── PDK configurations with per-backend model paths ──
 # Only list backends for which the PDK ships native model files.

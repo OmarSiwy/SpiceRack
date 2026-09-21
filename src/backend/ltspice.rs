@@ -130,12 +130,11 @@ impl Backend for LtspiceSubprocess {
 /// Detect LTspice executable on the system
 pub fn detect_ltspice() -> Option<(PathBuf, bool)> {
     // Check PATH first (user may have symlinked it)
-    if let Ok(output) = Command::new("which").arg("ltspice").output() {
-        if output.status.success() {
+    if let Ok(output) = Command::new("which").arg("ltspice").output()
+        && output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             return Some((PathBuf::from(path), false));
         }
-    }
 
     // macOS native
     let macos_path = PathBuf::from("/Applications/LTspice.app/Contents/MacOS/LTspice");

@@ -105,7 +105,6 @@ fn find_raw_file(dir: &std::path::Path) -> Result<std::path::PathBuf, BackendErr
 pub fn spice_to_vacask(spice: &str) -> String {
     let mut out = String::with_capacity(spice.len() * 2);
     let mut analysis_counter: u32 = 0;
-    let mut in_subckt = false;
 
     for line in spice.lines() {
         let trimmed = line.trim();
@@ -132,14 +131,14 @@ pub fn spice_to_vacask(spice: &str) -> String {
         }
 
         // Comments
-        if trimmed.starts_with('*') {
-            out.push_str(&format!("//{}\n", &trimmed[1..]));
+        if let Some(body) = trimmed.strip_prefix('*') {
+            out.push_str(&format!("//{}\n", body));
             continue;
         }
 
         // Continuation lines
-        if trimmed.starts_with('+') {
-            out.push_str(&format!("+ {}\n", &trimmed[1..].trim()));
+        if let Some(body) = trimmed.strip_prefix('+') {
+            out.push_str(&format!("+ {}\n", body.trim()));
             continue;
         }
 
@@ -151,10 +150,7 @@ pub fn spice_to_vacask(spice: &str) -> String {
             } else if upper.starts_with(".END") && !upper.starts_with(".ENDS") {
                 // .end — skip, vacask doesn't need it
             } else if upper.starts_with(".ENDS") {
-                out.push_str(&format!("ends {}\n",
-                    if in_subckt { "" } else { "" }
-                ));
-                in_subckt = false;
+                out.push_str("ends\n");
             } else if upper.starts_with(".SUBCKT") {
                 let parts: Vec<&str> = trimmed.split_whitespace().collect();
                 if parts.len() >= 3 {
@@ -164,7 +160,6 @@ pub fn spice_to_vacask(spice: &str) -> String {
                         .copied()
                         .collect();
                     out.push_str(&format!("subckt {} ({})\n", name, pins.join(" ")));
-                    in_subckt = true;
                 }
             } else if upper.starts_with(".MODEL") {
                 let parts: Vec<&str> = trimmed.split_whitespace().collect();
@@ -174,7 +169,7 @@ pub fn spice_to_vacask(spice: &str) -> String {
                     out.push_str(&format!("model {} {}", name, kind));
                     // Convert parenthesized params to key=value
                     let rest = parts[3..].join(" ");
-                    let rest = rest.replace('(', " ").replace(')', " ");
+                    let rest = rest.replace(['(', ')'], " ");
                     for param in rest.split_whitespace() {
                         out.push_str(&format!(" {}", param));
                     }

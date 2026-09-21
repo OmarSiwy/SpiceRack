@@ -7,8 +7,8 @@ switching backends is a single `with_backend()` call.
 
 No PDK needed (passive components only).
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm
 
 # ── DUT: voltage divider (backend-neutral) ──
 

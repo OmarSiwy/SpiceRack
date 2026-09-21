@@ -1,4 +1,4 @@
-"""Reusable analog and mixed-signal testbench builders for DeSpice examples."""
+"""Reusable analog and mixed-signal testbench builders."""
 
 from .design import (
     DesignBench,
@@ -7,6 +7,7 @@ from .design import (
     amplifier_transimpedance,
     amplifier_voltage_gain,
     bandgap_reference,
+    bandgap_tempco,
     charge_amplifier,
     dac_static_linearity,
     demux_routing,
@@ -56,6 +57,7 @@ __all__ = [
     "amplifier_transimpedance",
     "amplifier_voltage_gain",
     "bandgap_reference",
+    "bandgap_tempco",
     "charge_amplifier",
     "corner_netlists",
     "dac_static_linearity",

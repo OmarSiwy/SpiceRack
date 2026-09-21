@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import re
 from dataclasses import dataclass, field
 from math import sqrt
@@ -124,18 +125,146 @@ def _interp_at(x_values: Sequence[float], y_values: Sequence[float], x_target: f
     return float(y_values[-1])
 
 
-def _crossing_time(x_values: Sequence[float], y_values: Sequence[float], threshold: float, rising: bool) -> float:
+def crossings(
+    x_values: Sequence[float],
+    y_values: Sequence[float],
+    threshold: float,
+    rising: bool | None = None,
+    log_x: bool = False,
+) -> list[float]:
+    """Every x where y crosses ``threshold``, linearly interpolated.
+
+    ``rising=None`` returns both directions. ``log_x=True`` interpolates in
+    log10(x), which matters on a decade-spaced frequency sweep: linear
+    interpolation between decade points misplaces a -3 dB corner by ~1% at
+    10 points/decade.
+    """
+    found: list[float] = []
     for idx in range(1, min(len(x_values), len(y_values))):
-        y0 = float(y_values[idx - 1])
-        y1 = float(y_values[idx])
-        crossed = y0 <= threshold <= y1 if rising else y0 >= threshold >= y1
-        if crossed:
-            x0 = float(x_values[idx - 1])
-            x1 = float(x_values[idx])
-            if y1 == y0:
-                return x1
-            return x0 + (x1 - x0) * ((threshold - y0) / (y1 - y0))
-    raise ValueError(f"waveform never crossed {threshold}")
+        y0, y1 = float(y_values[idx - 1]), float(y_values[idx])
+        up = y0 <= threshold <= y1
+        down = y0 >= threshold >= y1
+        if rising is True and not up:
+            continue
+        if rising is False and not down:
+            continue
+        if rising is None and not (up or down):
+            continue
+        x0, x1 = float(x_values[idx - 1]), float(x_values[idx])
+        if y1 == y0:
+            found.append(x1)
+            continue
+        frac = (threshold - y0) / (y1 - y0)
+        if log_x and x0 > 0.0 and x1 > 0.0:
+            lo, hi = math.log10(x0), math.log10(x1)
+            found.append(10.0 ** (lo + (hi - lo) * frac))
+        else:
+            found.append(x0 + (x1 - x0) * frac)
+    return found
+
+
+def _crossing_time(x_values: Sequence[float], y_values: Sequence[float], threshold: float, rising: bool) -> float:
+    hits = crossings(x_values, y_values, threshold, rising=rising)
+    if not hits:
+        raise ValueError(f"waveform never crossed {threshold}")
+    return hits[0]
+
+
+def frequency_from_crossings(
+    time: Sequence[float],
+    values: Sequence[float],
+    threshold: float | None = None,
+    skip: float = 0.0,
+) -> float:
+    """Mean frequency from rising-edge crossings, ignoring the first ``skip`` seconds.
+
+    Averaging over the whole edge list rather than one period is what makes this
+    robust: a single period inherits the timestep quantisation of its two edges.
+    """
+    t = [float(x) for x in time]
+    v = [float(x) for x in values]
+    if threshold is None:
+        threshold = (max(v) + min(v)) / 2.0
+    edges = [x for x in crossings(t, v, threshold, rising=True) if x >= skip]
+    if len(edges) < 2:
+        raise ValueError(
+            f"need at least 2 rising crossings of {threshold:g} after {skip:g}s, got {len(edges)}"
+        )
+    return (len(edges) - 1) / (edges[-1] - edges[0])
+
+
+# ── AC-domain extractors ──
+#
+# These need magnitude and phase, which `ac[node]` does not provide (it is the
+# real part). They go through `ac.magnitude()` / `ac.phase()`.
+
+def _ac_db(ac: Any, node: str) -> tuple[list[float], list[float]]:
+    return [float(f) for f in ac.frequency], list(ac.magnitude_db(node))
+
+
+def ac_gain_db(ac: Any, node: str, at_hz: float) -> float:
+    """Gain in dB at one frequency (log-interpolated between sweep points)."""
+    freq, db = _ac_db(ac, node)
+    lo = [math.log10(f) for f in freq]
+    return _interp_at(lo, db, math.log10(at_hz))
+
+
+def ac_passband_db(ac: Any, node: str) -> float:
+    """Reference gain: the passband maximum.
+
+    Referencing to the *peak* rather than to DC is what makes this correct for
+    Chebyshev and bandpass responses, where the DC value is not the passband.
+    """
+    _, db = _ac_db(ac, node)
+    return max(db)
+
+
+#: The half-power point, 10*log10(2) = 3.0103 dB -- not 3.000 dB.
+#: Using a round 3.0 puts the corner of a single-pole response 0.23% low,
+#: a systematic error that does not shrink with sweep density.
+HALF_POWER_DB = 10.0 * math.log10(2.0)
+
+
+def ac_bandwidth_hz(ac: Any, node: str, drop_db: float = HALF_POWER_DB,
+                    reference_db: float | None = None) -> float:
+    """Frequency where the response falls ``drop_db`` below the passband.
+
+    Defaults to the half-power point (3.0103 dB), which is what "-3 dB
+    bandwidth" means. Pass ``drop_db=3.0`` for the literal-3 dB convention.
+    """
+    freq, db = _ac_db(ac, node)
+    ref = ac_passband_db(ac, node) if reference_db is None else reference_db
+    peak_idx = db.index(max(db)) if reference_db is None else 0
+    hits = crossings(freq[peak_idx:], db[peak_idx:], ref - drop_db,
+                     rising=False, log_x=True)
+    if not hits:
+        raise ValueError(
+            f"'{node}' never falls {drop_db} dB below its passband "
+            f"({ref:.3f} dB) within the swept range"
+        )
+    return hits[0]
+
+
+def ac_unity_gain_hz(ac: Any, node: str) -> float:
+    """Frequency where the magnitude crosses 0 dB going down."""
+    freq, db = _ac_db(ac, node)
+    hits = crossings(freq, db, 0.0, rising=False, log_x=True)
+    if not hits:
+        raise ValueError(f"'{node}' never crosses 0 dB within the swept range")
+    return hits[0]
+
+
+def ac_phase_margin_deg(ac: Any, node: str) -> float:
+    """Phase margin = 180 + phase at the unity-gain crossing.
+
+    Only meaningful on an open-loop response. On a closed-loop response this
+    number is not a stability margin.
+    """
+    f_unity = ac_unity_gain_hz(ac, node)
+    freq = [float(f) for f in ac.frequency]
+    lo = [math.log10(f) for f in freq]
+    phase = _interp_at(lo, list(ac.phase(node)), math.log10(f_unity))
+    return 180.0 + phase
 
 
 def extract_metrics(result: Any, specs: Sequence[MetricSpec]) -> dict[str, float]:

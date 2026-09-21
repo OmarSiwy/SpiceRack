@@ -4,8 +4,8 @@ Example 04: Common-Emitter BJT Amplifier
 Voltage-divider biased 2N2222, Vcc=12V, Ic~1mA.
 Demonstrates Q element with .model, coupling/bypass caps.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm, u_Ohm, u_uF
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm, u_Ohm, u_uF
 
 # ── DUT ──
 

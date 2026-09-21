@@ -1,5 +1,5 @@
-use pyspice::circuit::*;
-use pyspice::backend::{Backend, BackendKind, detect};
+use spicerack::circuit::*;
+use spicerack::backend::{Backend, BackendKind, detect};
 
 #[test]
 fn test_backend_kind_from_str() {
@@ -36,7 +36,7 @@ fn test_detect_backends() {
 
 #[test]
 fn test_available_backends_api() {
-    let backends = pyspice::simulation::CircuitSimulator::available_backends();
+    let backends = spicerack::simulation::CircuitSimulator::available_backends();
     // Returns strings, should not panic
     for b in &backends {
         assert!(!b.is_empty());
@@ -122,7 +122,7 @@ fn test_osdi_emitted_in_netlist() {
 
 #[test]
 fn test_circuit_features_struct_default() {
-    use pyspice::backend::CircuitFeatures;
+    use spicerack::backend::CircuitFeatures;
     let f = CircuitFeatures::default();
     assert!(!f.has_xspice);
     assert!(!f.has_osdi);
@@ -130,7 +130,7 @@ fn test_circuit_features_struct_default() {
 
 #[test]
 fn test_circuit_features_from_circuit() {
-    use pyspice::backend::CircuitFeatures;
+    use spicerack::backend::CircuitFeatures;
 
     let mut c = Circuit::new("features_test");
     c.osdi("test.osdi");
@@ -205,7 +205,7 @@ fn test_has_laplace_sources_true_for_bi() {
 
 #[test]
 fn test_simulator_features_measures() {
-    use pyspice::backend::CircuitFeatures;
+    use spicerack::backend::CircuitFeatures;
 
     let mut c = Circuit::new("meas_test");
     c.v("1", "in", Node::Ground, 1.0);
@@ -228,7 +228,7 @@ fn test_simulator_features_measures() {
 
 #[test]
 fn test_simulator_features_step_params() {
-    use pyspice::backend::CircuitFeatures;
+    use spicerack::backend::CircuitFeatures;
 
     let mut c = Circuit::new("step_test");
     c.v("1", "in", Node::Ground, 1.0);
@@ -247,21 +247,21 @@ fn test_simulator_features_step_params() {
 #[test]
 fn test_vacask_translate_resistor() {
     let input = ".title test\nR1 a b 1k\n.end";
-    let output = pyspice::backend::vacask::spice_to_vacask(input);
+    let output = spicerack::backend::vacask::spice_to_vacask(input);
     assert!(output.contains("r1 (a b) resistor r=1k"));
 }
 
 #[test]
 fn test_vacask_translate_voltage_source() {
     let input = ".title test\nV1 vdd 0 DC 3.3\n.end";
-    let output = pyspice::backend::vacask::spice_to_vacask(input);
+    let output = spicerack::backend::vacask::spice_to_vacask(input);
     assert!(output.contains("v1 (vdd 0) vsource dc=3.3"));
 }
 
 #[test]
 fn test_vacask_translate_mosfet() {
     let input = ".title test\nM1 drain gate source bulk nmos W=1u L=100n\n.end";
-    let output = pyspice::backend::vacask::spice_to_vacask(input);
+    let output = spicerack::backend::vacask::spice_to_vacask(input);
     assert!(output.contains("m1 (drain gate source bulk) nmos"));
     assert!(output.contains("w=1u"));
     assert!(output.contains("l=100n"));
@@ -270,42 +270,42 @@ fn test_vacask_translate_mosfet() {
 #[test]
 fn test_vacask_translate_ac_analysis() {
     let input = ".title test\nV1 in 0 1\n.ac dec 10 1 1G\n.end";
-    let output = pyspice::backend::vacask::spice_to_vacask(input);
+    let output = spicerack::backend::vacask::spice_to_vacask(input);
     assert!(output.contains("ac start=1 stop=1G dec=10"));
 }
 
 #[test]
 fn test_vacask_translate_tran_analysis() {
     let input = ".title test\nV1 in 0 1\n.tran 1u 10m\n.end";
-    let output = pyspice::backend::vacask::spice_to_vacask(input);
+    let output = spicerack::backend::vacask::spice_to_vacask(input);
     assert!(output.contains("tran stop=10m"));
 }
 
 #[test]
 fn test_vacask_translate_op_analysis() {
     let input = ".title test\nV1 in 0 1\n.op\n.end";
-    let output = pyspice::backend::vacask::spice_to_vacask(input);
+    let output = spicerack::backend::vacask::spice_to_vacask(input);
     assert!(output.contains("() dc"), "expected '() dc' in: {}", output);
 }
 
 #[test]
 fn test_vacask_translate_include() {
     let input = ".title test\n.include /path/to/model.lib\n.end";
-    let output = pyspice::backend::vacask::spice_to_vacask(input);
+    let output = spicerack::backend::vacask::spice_to_vacask(input);
     assert!(output.contains("include /path/to/model.lib"));
 }
 
 #[test]
 fn test_vacask_translate_param() {
     let input = ".title test\n.param vdd=3.3\n.end";
-    let output = pyspice::backend::vacask::spice_to_vacask(input);
+    let output = spicerack::backend::vacask::spice_to_vacask(input);
     assert!(output.contains("parameters vdd=3.3"));
 }
 
 #[test]
 fn test_vacask_translate_subcircuit() {
     let input = ".title test\n.SUBCKT mybuf in out vdd\nM1 out in vdd vdd pmos\n.ENDS\n.end";
-    let output = pyspice::backend::vacask::spice_to_vacask(input);
+    let output = spicerack::backend::vacask::spice_to_vacask(input);
     assert!(output.contains("subckt mybuf (in out vdd)"));
     assert!(output.contains("ends"));
 }
@@ -313,7 +313,7 @@ fn test_vacask_translate_subcircuit() {
 #[test]
 fn test_vacask_translate_comments() {
     let input = ".title test\n* This is a comment\nR1 a b 1k\n.end";
-    let output = pyspice::backend::vacask::spice_to_vacask(input);
+    let output = spicerack::backend::vacask::spice_to_vacask(input);
     assert!(output.contains("// This is a comment"));
 }
 
@@ -321,7 +321,7 @@ fn test_vacask_translate_comments() {
 
 #[test]
 fn test_ltspice_normalization() {
-    use pyspice::backend::ltspice::LtspiceSubprocess;
+    use spicerack::backend::ltspice::LtspiceSubprocess;
     use std::path::PathBuf;
 
     // We can't call normalize_netlist directly (it's private), but we can
@@ -331,7 +331,7 @@ fn test_ltspice_normalization() {
         use_wine: false,
         fast_access: false,
     };
-    assert_eq!(pyspice::backend::Backend::name(&backend), "ltspice");
+    assert_eq!(spicerack::backend::Backend::name(&backend), "ltspice");
 }
 
 // ── New analysis netlist generation tests ──
@@ -370,7 +370,7 @@ fn test_hb_netlist() {
 
 #[test]
 fn test_spectre_output_format_enum() {
-    use pyspice::backend::spectre::OutputFormat;
+    use spicerack::backend::spectre::OutputFormat;
     assert_ne!(OutputFormat::Nutmeg, OutputFormat::Psf);
     assert_eq!(OutputFormat::Nutmeg, OutputFormat::Nutmeg);
     assert_eq!(OutputFormat::Psf, OutputFormat::Psf);
@@ -380,22 +380,22 @@ fn test_spectre_output_format_enum() {
 
 #[test]
 fn test_psf_is_psf_detection() {
-    assert!(pyspice::psf::is_psf(b"Clarissa\x00\x00\x00\x01"));
-    assert!(!pyspice::psf::is_psf(b"Title: test\nPlotname:"));
-    assert!(!pyspice::psf::is_psf(b"short"));
+    assert!(spicerack::psf::is_psf(b"Clarissa\x00\x00\x00\x01"));
+    assert!(!spicerack::psf::is_psf(b"Title: test\nPlotname:"));
+    assert!(!spicerack::psf::is_psf(b"short"));
 }
 
 #[test]
 fn test_psf_parse_bad_magic() {
     let data = b"NotAValidPSFFile";
-    let result = pyspice::psf::parse_psf(data);
+    let result = spicerack::psf::parse_psf(data);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_psf_parse_too_short() {
     let data = b"Clar";
-    let result = pyspice::psf::parse_psf(data);
+    let result = spicerack::psf::parse_psf(data);
     assert!(result.is_err());
 }
 
@@ -404,9 +404,9 @@ fn test_psf_parse_too_short() {
 #[test]
 fn test_spectre_sweep_netlist_generation() {
     // This tests the netlist building logic, not actual Spectre execution
-    let backend = pyspice::backend::spectre::SpectreSubprocess;
+    let backend = spicerack::backend::spectre::SpectreSubprocess;
     // We can't actually run spectre, but we can verify the object exists
-    assert_eq!(pyspice::backend::Backend::name(&backend), "spectre");
+    assert_eq!(spicerack::backend::Backend::name(&backend), "spectre");
 }
 
 // ── Raw file parser tests ──
@@ -415,7 +415,7 @@ fn test_spectre_sweep_netlist_generation() {
 fn test_rawfile_utf16_detection() {
     // Standard UTF-8 ngspice raw file should NOT be detected as UTF-16
     let raw_content = b"Title: test\nPlotname: Operating Point\n";
-    let result = pyspice::rawfile::parse_raw(raw_content);
+    let result = spicerack::rawfile::parse_raw(raw_content);
     // Should fail gracefully (incomplete data) but not panic
     assert!(result.is_err());
 }
@@ -435,7 +435,7 @@ Values:\n\
 0\t3.300000e+00\n\
 \t1.000000e+00\n";
 
-    let result = pyspice::rawfile::parse_raw(raw_content).unwrap();
+    let result = spicerack::rawfile::parse_raw(raw_content).unwrap();
     assert_eq!(result.title, "test");
     assert_eq!(result.variables.len(), 2);
     assert!((result.real_data[0][0] - 3.3).abs() < 1e-10);
@@ -446,13 +446,13 @@ Values:\n\
 #[test]
 fn test_ngspice_shared_is_available_doesnt_panic() {
     // is_available should never panic, regardless of whether the lib exists
-    let _ = pyspice::backend::ngspice::NgspiceShared::is_available();
+    let _ = spicerack::backend::ngspice::NgspiceShared::is_available();
 }
 
 #[test]
 #[ignore] // Requires libngspice.so to be installed
 fn test_ngspice_shared_op_simulation() {
-    use pyspice::backend::ngspice::NgspiceShared;
+    use spicerack::backend::ngspice::NgspiceShared;
 
     let shared = NgspiceShared::new().expect("Failed to load libngspice.so");
 
@@ -475,7 +475,7 @@ fn test_ngspice_shared_op_simulation() {
 #[test]
 #[ignore] // Requires libngspice.so to be installed
 fn test_ngspice_shared_tran_simulation() {
-    use pyspice::backend::ngspice::NgspiceShared;
+    use spicerack::backend::ngspice::NgspiceShared;
 
     let shared = NgspiceShared::new().expect("Failed to load libngspice.so");
 
@@ -498,7 +498,7 @@ fn test_ngspice_shared_tran_simulation() {
 #[test]
 #[ignore] // Requires libngspice.so to be installed
 fn test_ngspice_shared_streaming_data() {
-    use pyspice::backend::ngspice::NgspiceSharedStreaming;
+    use spicerack::backend::ngspice::NgspiceSharedStreaming;
 
     let streaming = NgspiceSharedStreaming::new()
         .expect("Failed to load libngspice.so");
@@ -526,7 +526,7 @@ fn test_ngspice_shared_streaming_data() {
 #[test]
 #[ignore] // Requires libngspice.so to be installed
 fn test_ngspice_shared_backend_name() {
-    use pyspice::backend::ngspice::NgspiceShared;
+    use spicerack::backend::ngspice::NgspiceShared;
 
     let shared = NgspiceShared::new().expect("Failed to load libngspice.so");
     assert_eq!(shared.name(), "ngspice-shared");
@@ -537,13 +537,13 @@ fn test_ngspice_shared_backend_name() {
 #[test]
 fn test_vacask_library_is_available_doesnt_panic() {
     // is_available should never panic, regardless of whether the lib exists
-    let _ = pyspice::backend::vacask::VacaskLibrary::is_available();
+    let _ = spicerack::backend::vacask::VacaskLibrary::is_available();
 }
 
 #[test]
 #[ignore] // Requires libvacask.so to be installed
 fn test_vacask_library_init() {
-    use pyspice::backend::vacask::VacaskLibrary;
+    use spicerack::backend::vacask::VacaskLibrary;
 
     let lib = VacaskLibrary::new();
     assert!(lib.is_ok(), "Failed to init: {:?}", lib.err());
@@ -552,7 +552,7 @@ fn test_vacask_library_init() {
 #[test]
 #[ignore] // Requires libvacask.so to be installed
 fn test_vacask_library_op_simulation() {
-    use pyspice::backend::vacask::VacaskLibrary;
+    use spicerack::backend::vacask::VacaskLibrary;
 
     let lib = VacaskLibrary::new().expect("Failed to load libvacask.so");
 
@@ -571,7 +571,7 @@ fn test_vacask_library_op_simulation() {
 #[test]
 #[ignore] // Requires libvacask.so to be installed
 fn test_vacask_library_backend_name() {
-    use pyspice::backend::vacask::VacaskLibrary;
+    use spicerack::backend::vacask::VacaskLibrary;
 
     let lib = VacaskLibrary::new().expect("Failed to load libvacask.so");
     assert_eq!(lib.name(), "vacask-shared");

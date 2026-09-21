@@ -4,8 +4,8 @@ Example 11: JFET Common-Source Amplifier
 Self-biased 2N5457 N-JFET, VDD=15V.
 Demonstrates J element with .model.
 """
-import pyspice_rs as ps
-from pyspice_rs.unit import u_V, u_kOhm, u_uF
+import spicerack as ps
+from spicerack.unit import u_V, u_kOhm, u_uF
 
 # ── DUT ──
 
