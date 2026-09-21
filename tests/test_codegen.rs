@@ -371,7 +371,7 @@ fn test_spectre_mosfet_circuit() {
 
     assert!(netlist.contains("mp1 (out in vdd vdd) pmos_3p3 W=2u L=180n"), "mosfet: {}", netlist);
     assert!(netlist.contains("mn1 (out in 0 0) nmos_3p3 W=1u L=180n"), "mosfet n: {}", netlist);
-    assert!(netlist.contains("model nmos_3p3 NMOS (VTO=0.7)"), "model: {}", netlist);
+    assert!(netlist.contains("model nmos_3p3 NMOS VTO=0.7"), "model: {}", netlist);
     assert!(netlist.contains("dc1 dc"), "dc: {}", netlist);
     assert!(netlist.contains("mytemp options temp=27"), "temp: {}", netlist);
 }
@@ -408,7 +408,7 @@ fn test_spectre_waveforms() {
     let cg = SpectreCodeGen;
     let netlist = cg.emit_netlist(&ir).unwrap();
 
-    assert!(netlist.contains("type=sine sinedc=1 ampl=0.5 freq=1000000"), "sin: {}", netlist);
+    assert!(netlist.contains("type=sine sinedc=1 ampl=500m freq=1M"), "sin: {}", netlist);
     assert!(netlist.contains("type=pulse val0=0 val1=1.8"), "pulse: {}", netlist);
     assert!(netlist.contains("type=pwl wave=[0 0"), "pwl: {}", netlist);
     assert!(netlist.contains("tran1 tran step=1n"), "tran: {}", netlist);
@@ -456,31 +456,7 @@ fn test_spice3_all_analysis_types() {
     let four = Analysis::Fourier {
         fundamental: 1e3, outputs: vec!["V(out)".into()], num_harmonics: Some(10),
     };
-    assert!(cg.emit_analysis(&four).unwrap().contains(".four 1k 10 V(out)"));
-}
-
-#[test]
-fn test_spice3_options_ngspice_vs_xyce() {
-    let opts = SimOptions {
-        portable: vec![
-            ("reltol".into(), "1e-3".into()),
-            ("max_iterations".into(), "200".into()),
-            ("abstol".into(), "1e-12".into()),
-        ],
-        backend_specific: HashMap::new(),
-    };
-
-    let cg_ng = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
-    let ng = cg_ng.emit_options(&opts).unwrap();
-    assert!(ng.contains("reltol=1e-3"));
-    assert!(ng.contains("ITL1=200"));
-    assert!(ng.contains("abstol=1e-12"));
-
-    let cg_xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
-    let xy = cg_xy.emit_options(&opts).unwrap();
-    assert!(xy.contains("RELTOL=1e-3"));
-    assert!(xy.contains("NONLIN-MAXSTEP=200"));
-    assert!(xy.contains("ABSTOL=1e-12"));
+    assert!(cg.emit_analysis(&four).unwrap().contains(".four 1k V(out)"));
 }
 
 #[test]
@@ -497,7 +473,7 @@ fn test_spectre_options() {
     let s = cg.emit_options(&opts).unwrap();
     assert!(s.contains("myopts options"));
     assert!(s.contains("reltol=1e-4"));
-    assert!(s.contains("maxiters=150"));
+    assert!(s.contains("dcmaxiters=150"));
 }
 
 #[test]

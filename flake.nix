@@ -24,7 +24,6 @@
         ]);
         openvaf = import ./nix/openvaf.nix { inherit pkgs; };
         vacask = import ./nix/vacask.nix { inherit pkgs; openvafPkg = openvaf; };
-        xyce = import ./nix/xyce.nix { inherit pkgs; };
 
         srcFiltered = pkgs.lib.cleanSourceWith {
           src = ./.;
@@ -76,7 +75,6 @@
             pkgs.pkg-config
             openvaf
             vacask
-            xyce
           ];
 
           shellHook = ''
@@ -128,7 +126,7 @@
 
         packages = {
           default = spicerackRs;
-          inherit openvaf vacask xyce;
+          inherit openvaf vacask;
         };
       }
     );

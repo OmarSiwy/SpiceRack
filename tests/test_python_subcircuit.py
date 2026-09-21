@@ -781,22 +781,10 @@ class TestTestbenchCreation:
     def test_testbench_statistical_analysis_builders(self):
         ps = import_spicerack()
         dut = ps.Subcircuit("amp_mc", ["vin", "vout"])
+
         tb = ps.Testbench(dut)
-        tb.add_xyce_sampling(25, {"Rload": "normal(1000,50)"})
-
-        data = json.loads(tb.to_json())
-        assert data["testbench"]["analyses"][0]["type"] == "XyceSampling"
-        xyce = tb.netlist("xyce")
-        assert ".SAMPLING" in xyce
-        assert "+ Rload=normal(1000,50)" in xyce
-
-        tb2 = ps.Testbench(dut)
-        tb2.add_xyce_pce(10, {"Cload": "uniform(0.9p,1.1p)"}, order=3)
-        assert ".PCE" in tb2.netlist("xyce")
-
-        tb3 = ps.Testbench(dut)
-        tb3.add_spectre_monte_carlo(20, "tran1", "tran", seed=42)
-        spectre = tb3.netlist("spectre")
+        tb.add_spectre_monte_carlo(20, "tran1", "tran", seed=42)
+        spectre = tb.netlist("spectre")
         assert "mc1 montecarlo numruns=20" in spectre
         assert "seed=42" in spectre
 
@@ -820,19 +808,6 @@ class TestTestbenchCheckBackend:
         tb = ps.Testbench(dut)
         issues = tb.check_backend("ngspice")
         assert len(issues) == 0
-
-    def test_check_backend_xspice_on_xyce(self):
-        ps = import_spicerack()
-        dut = ps.Subcircuit("xspice_test")
-        dut.A(
-            name="adc1",
-            connections=["[vin]", "[dout]"],
-            model="adc_buf",
-        )
-        tb = ps.Testbench(dut)
-        issues = tb.check_backend("xyce")
-        assert any("XSPICE" in issue for issue in issues)
-
 
 # ── ModelLibrary Tests ──
 

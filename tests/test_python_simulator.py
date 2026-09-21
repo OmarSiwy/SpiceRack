@@ -56,7 +56,7 @@ class TestSimulatorCreation:
             negative=c.gnd,
             value=3.3,
         )
-        for backend in ["ngspice-subprocess", "ngspice-shared", "xyce", "ltspice"]:
+        for backend in ["ngspice-subprocess", "ngspice-shared", "ltspice", "vacask", "spectre"]:
             sim = c.simulator(simulator=backend)
             assert repr(sim) == "CircuitSimulator"
 
@@ -237,23 +237,6 @@ class TestAnalysisMethods:
     def test_network_params_exists(self):
         sim = self._sim()
         assert hasattr(sim, "network_params")
-
-    # Xyce-specific
-    def test_xyce_sampling_exists(self):
-        sim = self._sim()
-        assert hasattr(sim, "xyce_sampling")
-
-    def test_xyce_embedded_sampling_exists(self):
-        sim = self._sim()
-        assert hasattr(sim, "xyce_embedded_sampling")
-
-    def test_xyce_pce_exists(self):
-        sim = self._sim()
-        assert hasattr(sim, "xyce_pce")
-
-    def test_xyce_fft_exists(self):
-        sim = self._sim()
-        assert hasattr(sim, "xyce_fft")
 
     # Spectre-specific
     def test_spectre_sweep_exists(self):

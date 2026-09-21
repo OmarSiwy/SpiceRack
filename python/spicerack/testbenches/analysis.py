@@ -636,8 +636,6 @@ def find_metric_files(path: str | Path, backend: str = "auto") -> list[Path]:
 
     backend_lower = backend.lower()
     suffixes = {".csv", ".tsv", ".txt", ".log", ".mt0", ".ms0", ".ma0"}
-    if backend_lower.startswith("xyce"):
-        suffixes |= {".prn", ".res"}
     if backend_lower == "spectre":
         suffixes |= {".measure", ".measurement", ".mcdata"}
 
@@ -730,11 +728,12 @@ def corner_netlists(
 
 @dataclass(frozen=True)
 class MonteCarloPlan:
-    backend: str = "xyce"
+    """Statistical sampling plan. Spectre is the only backend with a
+    Monte Carlo statement SpiceRack can emit."""
+
+    backend: str = "spectre"
     samples: int = 100
     distributions: Mapping[str, str] = field(default_factory=dict)
-    mode: str = "sampling"
-    pce_order: int = 2
     spectre_inner: str = "tran1"
     spectre_inner_type: str = "tran"
     seed: int | None = None
@@ -744,21 +743,16 @@ class MonteCarloPlan:
         if hasattr(tb, "with_backend"):
             tb.with_backend(self.backend)
 
-        backend = self.backend.lower()
-        mode = self.mode.lower()
-        if backend == "spectre":
-            tb.add_spectre_monte_carlo(
-                self.samples,
-                self.spectre_inner,
-                self.spectre_inner_type,
-                self.seed,
+        if self.backend.lower() != "spectre":
+            raise ValueError(
+                f"MonteCarloPlan supports backend='spectre'; got {self.backend!r}"
             )
-        elif mode == "embedded":
-            tb.add_xyce_embedded_sampling(self.samples, dict(self.distributions))
-        elif mode == "pce":
-            tb.add_xyce_pce(self.samples, dict(self.distributions), self.pce_order)
-        else:
-            tb.add_xyce_sampling(self.samples, dict(self.distributions))
+        tb.add_spectre_monte_carlo(
+            self.samples,
+            self.spectre_inner,
+            self.spectre_inner_type,
+            self.seed,
+        )
         return bench_or_testbench
 
 

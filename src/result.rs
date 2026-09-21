@@ -438,9 +438,7 @@ impl TransientNoiseAnalysis {
     }
 }
 
-// ── Xyce-specific analysis result types ──
-
-/// Result from Xyce .SAMPLING / .EMBEDDEDSAMPLING / .PCE analysis
+/// Result from a statistical sampling analysis
 #[derive(Debug, Clone)]
 pub struct SamplingAnalysis {
     pub base: AnalysisBase,
@@ -450,90 +448,6 @@ impl SamplingAnalysis {
     pub fn from_raw(raw: RawData) -> Self {
         Self {
             base: AnalysisBase::from_raw(&raw),
-        }
-    }
-}
-
-/// Options for Xyce .FFT analysis
-#[derive(Debug, Clone)]
-pub struct XyceFftOptions {
-    /// Number of points (should be power of 2)
-    pub np: u32,
-    /// Start time for FFT window
-    pub start: f64,
-    /// Stop time for FFT window
-    pub stop: f64,
-    /// Window function: "HANN", "RECT", "BARTLETT", "BLACKMAN", "HAMMING", etc.
-    pub window: String,
-    /// Output format: "UNORM", "NORM", "MAG"
-    pub format: String,
-}
-
-impl Default for XyceFftOptions {
-    fn default() -> Self {
-        Self {
-            np: 1024,
-            start: 0.0,
-            stop: 1e-3,
-            window: "HANN".to_string(),
-            format: "UNORM".to_string(),
-        }
-    }
-}
-
-/// Result from Xyce .FFT analysis
-#[derive(Debug, Clone)]
-pub struct XyceFftAnalysis {
-    pub base: AnalysisBase,
-    pub frequency: Vec<f64>,
-    pub magnitude: Vec<f64>,
-    pub phase: Vec<f64>,
-    /// Effective Number of Bits
-    pub enob: f64,
-    /// Spurious-Free Dynamic Range in dB
-    pub sfdr_db: f64,
-    /// Signal-to-Noise Ratio in dB
-    pub snr_db: f64,
-    /// Total Harmonic Distortion in dB
-    pub thd_db: f64,
-}
-
-impl XyceFftAnalysis {
-    pub fn from_raw(raw: RawData) -> Self {
-        let base = AnalysisBase::from_raw(&raw);
-
-        // Extract frequency, magnitude, and phase from raw data
-        let frequency = if !raw.real_data.is_empty() {
-            raw.real_data[0].clone()
-        } else {
-            Vec::new()
-        };
-
-        // Magnitude is typically the second variable, phase the third
-        let magnitude = if raw.real_data.len() > 1 {
-            raw.real_data[1].clone()
-        } else {
-            Vec::new()
-        };
-
-        let phase = if raw.real_data.len() > 2 {
-            raw.real_data[2].clone()
-        } else {
-            Vec::new()
-        };
-
-        // Compute spectral metrics from magnitude data
-        let (enob, sfdr_db, snr_db, thd_db) = compute_fft_metrics(&magnitude);
-
-        Self {
-            base,
-            frequency,
-            magnitude,
-            phase,
-            enob,
-            sfdr_db,
-            snr_db,
-            thd_db,
         }
     }
 }

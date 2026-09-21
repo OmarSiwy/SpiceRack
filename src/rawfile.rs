@@ -1,4 +1,4 @@
-//! Parser for ngspice/Xyce `.raw` binary and ASCII output files.
+//! Parser for nutmeg-format `.raw` binary and ASCII output files (ngspice, VACASK, LTspice).
 //!
 //! Format:
 //!   Header lines (key: value)

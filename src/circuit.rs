@@ -399,8 +399,40 @@ pub struct BehavioralVoltage {
 
 impl fmt::Display for BehavioralVoltage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(lines) = emit_laplace_ngspice(&self.name, &self.np, &self.nm, &self.expression, false) {
+            return write!(f, "{lines}");
+        }
         write!(f, "B{} {} {} V={}", self.name, self.np, self.nm, self.expression)
     }
+}
+
+/// `Circuit::Display` is the legacy single-dialect emitter and every other
+/// line it writes is ngspice/SPICE3, so a Laplace source becomes ngspice's
+/// XSPICE `s_xfer`. `Display` cannot fail, so an expression that will not
+/// translate falls through to the verbatim `V=Laplace(...)` text — which is
+/// fatal, and is exactly why `Circuit::laplace_error` exists and is checked
+/// before any deck built this way reaches a simulator.
+fn emit_laplace_ngspice(
+    name: &str, np: &Node, nm: &Node, expression: &str, current_output: bool,
+) -> Option<String> {
+    use crate::codegen::CodeGen;
+    if !crate::codegen::laplace::is_laplace(expression) {
+        return None;
+    }
+    let comp = if current_output {
+        crate::ir::Component::BehavioralCurrent {
+            name: name.into(), np: np.to_string(), nm: nm.to_string(),
+            expression: expression.into(),
+        }
+    } else {
+        crate::ir::Component::BehavioralVoltage {
+            name: name.into(), np: np.to_string(), nm: nm.to_string(),
+            expression: expression.into(),
+        }
+    };
+    crate::codegen::spice3::Spice3CodeGen { dialect: crate::codegen::spice3::Spice3Dialect::Ngspice }
+        .emit_component(&comp)
+        .ok()
 }
 
 #[derive(Debug, Clone)]
@@ -413,6 +445,9 @@ pub struct BehavioralCurrent {
 
 impl fmt::Display for BehavioralCurrent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(lines) = emit_laplace_ngspice(&self.name, &self.np, &self.nm, &self.expression, true) {
+            return write!(f, "{lines}");
+        }
         write!(f, "B{} {} {} I={}", self.name, self.np, self.nm, self.expression)
     }
 }
@@ -1737,12 +1772,50 @@ impl Circuit {
             })
     }
 
-    /// Returns true if any B-source uses `Laplace(` in its expression.
+    /// Returns true if any B-source uses `Laplace(...)` in its expression.
+    ///
+    /// Shares one predicate with the IR's feature scan; the two used to differ
+    /// (`"Laplace("` here, `"laplace"` there) so a capital-L expression set the
+    /// routing flag on one path and not the other.
     pub fn has_laplace_sources(&self) -> bool {
         self.elements.iter().any(|e| match e {
-            Element::BV(bv) => bv.expression.contains("Laplace("),
-            Element::BI(bi) => bi.expression.contains("Laplace("),
+            Element::BV(bv) => crate::codegen::laplace::is_laplace(&bv.expression),
+            Element::BI(bi) => crate::codegen::laplace::is_laplace(&bi.expression),
             _ => false,
+        })
+    }
+
+    /// Why this circuit's Laplace sources cannot be run through the legacy
+    /// `Display` netlist on `backend`, or `None` if they can.
+    ///
+    /// `Display` has no dialect knob: it writes ngspice's XSPICE `s_xfer`, and
+    /// silently drops back to the verbatim (fatal) `V=Laplace(...)` text for
+    /// an expression it cannot translate. Both holes are closed here, before a
+    /// deck reaches a simulator. Callers that build their netlist through
+    /// `CodeGen` do not need this — they get a `CodeGenError` instead.
+    pub fn laplace_error(&self, backend: &str) -> Option<String> {
+        let sources: Vec<(&str, &str)> = self
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                Element::BV(b) => Some((b.name.as_str(), b.expression.as_str())),
+                Element::BI(b) => Some((b.name.as_str(), b.expression.as_str())),
+                _ => None,
+            })
+            .filter(|(_, expr)| crate::codegen::laplace::is_laplace(expr))
+            .collect();
+        if sources.is_empty() {
+            return None;
+        }
+        if !backend.starts_with("ngspice") {
+            return Some(format!(
+                "Laplace sources are emitted as ngspice XSPICE `s_xfer` blocks by this \
+                 netlist path, which '{backend}' cannot parse. Run them on ngspice, or \
+                 build the netlist through the backend's code generator."
+            ));
+        }
+        sources.iter().find_map(|(name, expr)| {
+            crate::codegen::laplace::parse(expr).err().map(|why| format!("B{name}: {why}"))
         })
     }
 }

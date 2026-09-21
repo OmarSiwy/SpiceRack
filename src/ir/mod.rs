@@ -195,10 +195,6 @@ pub enum Analysis {
     TransientNoise { step: f64, stop: f64 },
     Fourier { fundamental: f64, outputs: Vec<String>, num_harmonics: Option<u32> },
     // Vendor-specific
-    XyceSampling { num_samples: u32, distributions: Vec<(String, String)> },
-    XyceEmbeddedSampling { num_samples: u32, distributions: Vec<(String, String)> },
-    XycePce { num_samples: u32, distributions: Vec<(String, String)>, order: u32 },
-    XyceFft { signal: String, np: u32, start: f64, stop: f64, window: String, format: String },
     SpectreSweep { param: String, start: f64, stop: f64, step: f64, inner: String, inner_type: String },
     SpectreMonteCarlo { iterations: u32, inner: String, inner_type: String, seed: Option<u64> },
     SpectrePac { pss_fundamental: f64, pss_stabilization: f64, pss_harmonics: u32, variation: String, points: u32, start: f64, stop: f64, sweep_type: String },
@@ -226,10 +222,6 @@ impl Analysis {
             Analysis::Stability { .. } => "stb",
             Analysis::TransientNoise { .. } => "trannoise",
             Analysis::Fourier { .. } => "tran",
-            Analysis::XyceSampling { .. } => "sampling",
-            Analysis::XyceEmbeddedSampling { .. } => "embedded_sampling",
-            Analysis::XycePce { .. } => "pce",
-            Analysis::XyceFft { .. } => "tran",
             Analysis::SpectreSweep { .. } => "tran",
             Analysis::SpectreMonteCarlo { .. } => "tran",
             Analysis::SpectrePac { .. } => "pac",
@@ -355,7 +347,7 @@ impl CircuitIR {
                 }
                 Component::BehavioralVoltage { expression, .. }
                 | Component::BehavioralCurrent { expression, .. }
-                    if expression.contains("laplace") => {
+                    if crate::codegen::laplace::is_laplace(expression) => {
                         flags.has_laplace_sources = true;
                     }
                 _ => {}
@@ -449,7 +441,7 @@ impl CircuitIR {
                 issues.push(Issue {
                     severity: IssueSeverity::Warning,
                     message: format!(
-                        "Large circuit ({} elements) may be slow on '{}'; consider xyce-parallel",
+                        "Large circuit ({} elements) may be slow on '{}'",
                         features.element_count, backend
                     ),
                 });
@@ -1128,41 +1120,6 @@ mod tests {
     }
 
     #[test]
-    fn test_check_backend_xspice_against_xyce() {
-        let ir = CircuitIR {
-            top: Subcircuit {
-                name: "xspice_check".into(),
-                ports: Vec::new(),
-                parameters: Vec::new(),
-                components: vec![Component::Xspice {
-                    name: "1".into(),
-                    connections: vec!["in".into(), "out".into()],
-                    model: "d_and".into(),
-                }],
-                instances: Vec::new(),
-                models: Vec::new(),
-                raw_spice: Vec::new(),
-                includes: Vec::new(),
-                libs: Vec::new(),
-                osdi_loads: Vec::new(),
-                verilog_blocks: vec![],
-            },
-            testbench: None,
-            subcircuit_defs: Vec::new(),
-            model_libraries: Vec::new(),
-        };
-
-        let issues = ir.check_backend("xyce");
-        assert!(!issues.is_empty());
-        assert!(issues.iter().any(|i| i.severity == IssueSeverity::Error));
-        assert!(issues.iter().any(|i| i.message.contains("XSPICE")));
-
-        // ngspice should be fine
-        let ngspice_issues = ir.check_backend("ngspice");
-        assert!(ngspice_issues.is_empty());
-    }
-
-    #[test]
     fn test_check_backend_osdi_against_ltspice() {
         let ir = CircuitIR {
             top: Subcircuit {
@@ -1219,7 +1176,7 @@ mod tests {
             model_libraries: Vec::new(),
         };
 
-        for backend in &["ngspice", "xyce", "ltspice", "vacask", "spectre"] {
+        for backend in &["ngspice", "ltspice", "vacask", "spectre"] {
             assert!(ir.check_backend(backend).is_empty(), "Expected no issues for {}", backend);
         }
     }
@@ -1937,10 +1894,6 @@ mod tests {
             Analysis::Stability { probe: "iprobe".into(), variation: "dec".into(), points: 100, start: 1.0, stop: 1e9 },
             Analysis::TransientNoise { step: 1e-9, stop: 1e-6 },
             Analysis::Fourier { fundamental: 1e3, outputs: vec!["V(out)".into()], num_harmonics: Some(10) },
-            Analysis::XyceSampling { num_samples: 100, distributions: vec![("R1".into(), "gaussian 1k 100".into())] },
-            Analysis::XyceEmbeddedSampling { num_samples: 50, distributions: vec![] },
-            Analysis::XycePce { num_samples: 100, distributions: vec![], order: 3 },
-            Analysis::XyceFft { signal: "V(out)".into(), np: 1024, start: 0.0, stop: 1e-3, window: "hanning".into(), format: "mag".into() },
             Analysis::SpectreSweep { param: "R1".into(), start: 1e3, stop: 10e3, step: 1e3, inner: "dc1".into(), inner_type: "dc".into() },
             Analysis::SpectreMonteCarlo { iterations: 100, inner: "tran1".into(), inner_type: "tran".into(), seed: Some(42) },
             Analysis::SpectrePac { pss_fundamental: 1e6, pss_stabilization: 100e-6, pss_harmonics: 10, variation: "dec".into(), points: 100, start: 1.0, stop: 1e9, sweep_type: "relative".into() },
@@ -2101,10 +2054,6 @@ mod tests {
         assert_eq!(
             Analysis::TransientNoise { step: 1e-9, stop: 1e-6 }.kind_str(),
             "trannoise"
-        );
-        assert_eq!(
-            Analysis::XyceSampling { num_samples: 100, distributions: vec![] }.kind_str(),
-            "sampling"
         );
         assert_eq!(
             Analysis::SpectrePac { pss_fundamental: 1e6, pss_stabilization: 10e-6, pss_harmonics: 10, variation: "dec".into(), points: 10, start: 1.0, stop: 1e6, sweep_type: "relative".into() }.kind_str(),

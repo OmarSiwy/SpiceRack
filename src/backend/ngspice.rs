@@ -143,32 +143,77 @@ pub const NGSPICE_CAPS: BackendCapabilities = BackendCapabilities {
 /// silently drop the spectra that callers actually read.
 const ANALYSIS_CARDS: [&str; 3] = ["ac", "tran", "dc"];
 
-/// Rewrite a deck so `.measure` results reach stdout.
+/// Control commands that mean an existing `.control` block owns the run.
 ///
-/// ngspice cannot emit measure results under `-b -r rawfile`, so the analysis
-/// card is moved into a `.control` block that writes the rawfile itself.
-/// Returns `None` when the deck needs no rewrite (no measures, no analysis
-/// card found, or a `.control` block is already present).
-fn control_block_deck(netlist: &str, raw_path: &std::path::Path) -> Option<String> {
-    let has_measure = netlist
-        .lines()
-        .any(|l| l.trim_start().to_lowercase().starts_with(".meas"));
-    if !has_measure {
+/// The codegen emits its own `.control` block for `pre_osdi` loads, and that
+/// block runs nothing — bailing on *any* `.control` would mean OSDI decks can
+/// never report `.measure` results. ngspice accepts several `.control` blocks
+/// per deck (verified on 44.2), so only a block that actually starts an
+/// analysis is off limits.
+const RUN_COMMANDS: [&str; 5] = ["run", "op", "ac", "tran", "dc"];
+
+/// Lowercased first whitespace-separated token of a line.
+fn first_word(line: &str) -> String {
+    line.split_whitespace().next().unwrap_or("").to_lowercase()
+}
+
+/// True if some `.control`/`.endc` block in the deck issues a run command.
+fn has_owning_control_block(netlist: &str) -> bool {
+    let mut inside = false;
+    for line in netlist.lines() {
+        match first_word(line).as_str() {
+            ".control" => inside = true,
+            ".endc" => inside = false,
+            word if inside && RUN_COMMANDS.contains(&word) => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Split a `.four` card into `(fundamental, outputs)`.
+///
+/// SPICE3 syntax is `.four <freq> <ov1> [ov2 ...]`; there is no harmonic-count
+/// field, and the codegen no longer emits one for this dialect.
+fn parse_four_card(line: &str) -> Option<(String, Vec<String>)> {
+    let mut parts = line.split_whitespace();
+    if parts.next()?.to_lowercase() != ".four" {
         return None;
     }
-    // A hand-written control block already owns the run; don't fight it.
-    if netlist
-        .lines()
-        .any(|l| l.trim_start().to_lowercase().starts_with(".control"))
-    {
+    let fundamental = parts.next()?.to_string();
+    let outputs: Vec<String> = parts.map(str::to_string).collect();
+    if outputs.is_empty() {
+        return None;
+    }
+    Some((fundamental, outputs))
+}
+
+/// Rewrite a deck so `.measure` and `.four` results reach stdout.
+///
+/// ngspice refuses both under `-b -r rawfile`:
+///   - "No .measure possible in batch mode (-b) with -r rawfile set!"
+///   - ".fourier line ignored since rawfile was produced."
+///
+/// The cure is the same for both: move the analysis card into a `.control`
+/// block that writes the rawfile itself. Inside the block `.four` has to become
+/// the `fourier` command — there is no `four` command ("four: no such command
+/// available in ngspice").
+///
+/// Returns `None` when the deck needs no rewrite (nothing to recover, no
+/// analysis card found, or a control block already runs the simulation).
+fn control_block_deck(netlist: &str, raw_path: &std::path::Path) -> Option<String> {
+    let has_measure = netlist.lines().any(|l| first_word(l).starts_with(".meas"));
+    let four = netlist.lines().find_map(parse_four_card);
+    if !has_measure && four.is_none() {
+        return None;
+    }
+    if has_owning_control_block(netlist) {
         return None;
     }
 
     let analysis_idx = netlist.lines().position(|l| {
-        let lower = l.trim_start().to_lowercase();
-        ANALYSIS_CARDS
-            .iter()
-            .any(|c| lower.starts_with(&format!(".{} ", c)) || lower.trim_end() == format!(".{}", c))
+        let word = first_word(l);
+        ANALYSIS_CARDS.iter().any(|c| word == format!(".{}", c))
     })?;
 
     let mut out = Vec::new();
@@ -177,11 +222,50 @@ fn control_block_deck(netlist: &str, raw_path: &std::path::Path) -> Option<Strin
             // `.ac dec 10 1 1k` -> bare `ac dec 10 1 1k` inside the block
             out.push(".control".to_string());
             out.push(line.trim_start().trim_start_matches('.').to_string());
+            if let Some((fundamental, outputs)) = &four {
+                out.push(format!("fourier {} {}", fundamental, outputs.join(" ")));
+            }
             out.push(format!("write {}", raw_path.display()));
             out.push(".endc".to_string());
+        } else if four.is_some() && first_word(line) == ".four" {
+            // Leaving the dot-card in place makes ngspice run the analysis twice.
+            continue;
         } else {
             out.push(line.to_string());
         }
+    }
+    out.push(String::new());
+    Some(out.join("\n"))
+}
+
+/// Give a hand-written `.control` deck somewhere to put its results.
+///
+/// A deck whose analysis lives in a `.control` block writes nothing under
+/// `-b -r rawfile`: ngspice reserves the file for dot-card analyses, the
+/// control block runs, and the rawfile is never created — the backend then
+/// fails with "Failed to read raw file". Appending a second control block that
+/// just does `write` captures the current plot. Returns `None` when the deck
+/// has no control block of its own or already writes one.
+fn append_write_block(netlist: &str, raw_path: &std::path::Path) -> Option<String> {
+    if !has_owning_control_block(netlist) {
+        return None;
+    }
+    if netlist.lines().any(|l| first_word(l) == "write") {
+        return None;
+    }
+
+    let block = format!(".control\nwrite {}\n.endc", raw_path.display());
+    let mut out: Vec<String> = Vec::new();
+    let mut inserted = false;
+    for line in netlist.lines() {
+        if !inserted && first_word(line) == ".end" {
+            out.push(block.clone());
+            inserted = true;
+        }
+        out.push(line.to_string());
+    }
+    if !inserted {
+        out.push(block);
     }
     out.push(String::new());
     Some(out.join("\n"))
@@ -222,6 +306,52 @@ mod deck_tests {
         let deck = "* t\n.meas ac g find vdb(b) at=100\n.control\nrun\n.endc\n.ac dec 10 1 1k\n.end\n";
         assert!(control_block_deck(deck, Path::new(RAW)).is_none());
     }
+
+    #[test]
+    fn rewrites_around_an_osdi_only_control_block() {
+        // The codegen's own pre_osdi block runs nothing, so it must not veto the
+        // rewrite — otherwise OSDI decks can never report measures.
+        let deck = "* t\n.control\npre_osdi /m.osdi\n.endc\nR1 a b 1k\n\
+                    .meas tran x find v(b) at=1\n.tran 1n 1u\n.end\n";
+        let out = control_block_deck(deck, Path::new(RAW)).expect("should rewrite");
+        assert!(out.contains("pre_osdi /m.osdi"), "osdi block kept: {}", out);
+        assert!(out.contains("tran 1n 1u\nwrite /tmp/out.raw"), "rewritten: {}", out);
+    }
+
+    #[test]
+    fn routes_four_through_the_fourier_command() {
+        // `.four` is ignored under `-b -r`, and there is no `four` command
+        // inside a control block — it has to become `fourier`.
+        let deck = "* t\nV1 a 0 SIN(0 1 1k)\n.tran 1u 10m\n.four 1k v(a)\n.end\n";
+        let out = control_block_deck(deck, Path::new(RAW)).expect("should rewrite");
+        assert!(out.contains("tran 1u 10m\nfourier 1k v(a)\n"), "order: {}", out);
+        assert!(!out.contains(".four "), "dot-card removed: {}", out);
+    }
+
+    #[test]
+    fn four_without_a_transient_card_is_left_alone() {
+        let deck = "* t\n.four 1k v(a)\n.end\n";
+        assert!(control_block_deck(deck, Path::new(RAW)).is_none());
+    }
+
+    #[test]
+    fn appends_a_write_block_to_a_hand_written_control_deck() {
+        let deck = "* t\nV1 a 0 3\n.control\nop\n.endc\n.end\n";
+        let out = super::append_write_block(deck, Path::new(RAW)).expect("should append");
+        assert!(out.contains(".control\nwrite /tmp/out.raw\n.endc\n.end"), "{}", out);
+    }
+
+    #[test]
+    fn leaves_a_control_deck_that_already_writes_alone() {
+        let deck = "* t\n.control\nop\nwrite mine.raw\n.endc\n.end\n";
+        assert!(super::append_write_block(deck, Path::new(RAW)).is_none());
+    }
+
+    #[test]
+    fn does_not_append_to_a_plain_dot_card_deck() {
+        let deck = "* t\nV1 a 0 3\n.op\n.end\n";
+        assert!(super::append_write_block(deck, Path::new(RAW)).is_none());
+    }
 }
 
 impl Backend for NgspiceSubprocess {
@@ -242,15 +372,15 @@ impl Backend for NgspiceSubprocess {
         let cir_path_owned = cir_file.path().to_path_buf();
         let raw_path = cir_path_owned.with_extension("raw");
 
-        // ngspice refuses to run `.measure` under `-b -r rawfile`:
-        //   "No .measure possible in batch mode (-b) with -r rawfile set!"
-        // When measures are present, move the analysis into a `.control` block
-        // that writes the rawfile itself. The analysis card must be *replaced*,
-        // not kept alongside `run`, or ngspice executes the analysis twice.
-        let deck = match control_block_deck(netlist, &raw_path) {
-            Some(rewritten) => rewritten,
-            None => netlist.to_string(),
-        };
+        // ngspice refuses to run `.measure` (and ignores `.four`) under
+        // `-b -r rawfile`. When either is present, move the analysis into a
+        // `.control` block that writes the rawfile itself. The analysis card
+        // must be *replaced*, not kept alongside `run`, or ngspice executes the
+        // analysis twice. A deck that already owns a control block instead gets
+        // a `write` appended, or it produces no rawfile at all.
+        let deck = control_block_deck(netlist, &raw_path)
+            .or_else(|| append_write_block(netlist, &raw_path))
+            .unwrap_or_else(|| netlist.to_string());
         let used_control_block = deck != netlist;
 
         cir_file.write_all(deck.as_bytes())?;

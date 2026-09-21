@@ -2,7 +2,7 @@
 
 Build SPICE circuits in Python, generate netlists, run them on whichever simulator you have installed, and read the results back as plain lists of floats.
 
-The core is a Rust crate (`spicerack`). Python bindings ship in the same package, imported as `spicerack`. The API is close enough to PySpice that most PySpice code ports with an import change, but the circuit model underneath is backend neutral: one description compiles to ngspice, Xyce, LTspice, Spectre, or VACASK dialects.
+The core is a Rust crate (`spicerack`). Python bindings ship in the same package, imported as `spicerack`. The API is close enough to PySpice that most PySpice code ports with an import change, but the circuit model underneath is backend neutral: one description compiles to ngspice, LTspice, VACASK, or Spectre dialects.
 
 ## Install
 
@@ -20,7 +20,7 @@ You also need at least one simulator to actually run an analysis. Start with `ng
 | Tool | Needed for |
 | --- | --- |
 | `ngspice` | Default backend, and the only one with XSPICE, control blocks, and Verilog co-simulation |
-| `xyce`, `ltspice`, `spectre`, `vacask` | Alternative backends |
+| `ltspice`, `vacask`, `spectre` | Alternative backends |
 | `openvaf` | Compiling Verilog-A to OSDI |
 | `iverilog` | Digital Verilog co-simulation |
 | `yosys` | Synthesizing Verilog to gate level (`verilog(mode="synthesize")`) |
@@ -126,19 +126,16 @@ tran = tb.transient(step_time=10e-6, end_time=5e-3)
 
 Beyond those there is `noise`, `transfer_function` (aliased `tf`), `dc_sensitivity`, `ac_sensitivity`, `polezero`, and `distortion`. The RF and periodic steady-state group covers `pss`, `s_param`, `harmonic_balance`, `stability`, and `transient_noise`.
 
-Some analyses only exist on one simulator, so they are exposed under a backend prefix. Spectre contributes `spectre_sweep`, `spectre_montecarlo`, `spectre_pac`, `spectre_pnoise`, `spectre_pxf`, and `spectre_pstb`. Xyce contributes `xyce_sampling`, `xyce_embedded_sampling`, `xyce_pce`, and `xyce_fft`.
+Some analyses only exist on one simulator, so they are exposed under a backend prefix. Spectre contributes `spectre_sweep`, `spectre_montecarlo`, `spectre_pac`, `spectre_pnoise`, `spectre_pxf`, and `spectre_pstb`.
 
 ```python
-sim = circuit.simulator(simulator="xyce")
+sim = circuit.simulator(simulator="spectre")
 
-res = sim.xyce_sampling(100, [("R1", "normal(1000,50)"),
-                              ("R2", "uniform(900,1100)")])
 
-fft = sim.xyce_fft("V(vout)", np=1024, start=0.0, stop=1e-3, window="HANN")
 fft.enob, fft.sfdr_db, fft.snr_db, fft.thd_db
 ```
 
-`Testbench` has builder equivalents (`add_xyce_sampling`, `add_xyce_pce`, `add_spectre_sweep`, `add_spectre_monte_carlo`, and so on) that write the directive into the netlist instead of running it, which pairs with `tb.netlist("xyce")` when you want the text rather than the result.
+`Testbench` has builder equivalents (`add_spectre_sweep`, `add_spectre_monte_carlo`, and so on) that write the directive into the netlist instead of running it, which pairs with `tb.netlist("spectre")` when you want the text rather than the result.
 
 ## Reading results
 
@@ -174,20 +171,20 @@ tb.step_sweep("R1", 100, 10000, 10, "dec")         # lin, oct, or dec
 ```python
 ps.CircuitSimulator.available_backends()   # what is actually installed
 tb.with_backend("vacask")
-sim = circuit.simulator(simulator="xyce")
+sim = circuit.simulator(simulator="spectre")
 ```
 
 Without an explicit choice, SpiceRack picks a backend by looking at what the circuit uses and what the analysis needs. A circuit with XSPICE elements or a control block narrows to ngspice; one with OSDI models can go to ngspice, VACASK, or Spectre.
 
-| Feature | ngspice | xyce | ltspice | vacask | spectre |
-| --- | --- | --- | --- | --- | --- |
-| XSPICE (A-elements) | Yes | No | No | No | No |
-| OSDI (Verilog-A) | Yes | No | No | Yes | Yes |
-| `.measure` | Yes | Yes | Yes | No | No |
-| `.step` parameters | No | Yes | Yes | No | Yes |
-| Control blocks | Yes | No | No | No | No |
-| Laplace sources | Yes | No | Yes | No | No |
-| Verilog co-simulation | Yes | No | No | No | Yes |
+| Feature | ngspice | ltspice | vacask | spectre |
+| --- | --- | --- | --- | --- |
+| XSPICE (A-elements) | Yes | No | No | No |
+| OSDI (Verilog-A) | Yes | No | Yes | Yes |
+| `.measure` | Yes | Yes | No | Yes |
+| Parameter sweeps | No | Yes | Yes | Yes |
+| Control blocks | Yes | No | No | No |
+| Laplace sources | Yes | Yes | No | No |
+| Verilog co-simulation | Yes | No | No | Yes |
 
 Because the DUT is backend neutral, running the same design on several simulators is a loop:
 
@@ -283,7 +280,7 @@ report = validate_metrics(metrics, [
 
 ## Output file parsing
 
-Reading results back is native Rust rather than a shell-out, which is most of why the round trip is quick. SpiceRack parses ngspice and Xyce `.raw` files in both ASCII and binary form, including the column-major FastAccess layout, LTspice raw files with their UTF-16-LE headers, and Cadence PSF binary files from Spectre. Simulator `.meas` output is parsed into `res.measures`, and node naming is normalized across backends so `res["vout"]` means the same thing no matter who ran the simulation.
+Reading results back is native Rust rather than a shell-out, which is most of why the round trip is quick. SpiceRack parses nutmeg `.raw` files from ngspice and VACASK in both ASCII and binary form, including the column-major FastAccess layout, and LTspice raw files with their UTF-16-LE headers. Spectre is run with `-format nutbin` so it writes Nutmeg too; PSF binary files are detected but not parsed. Simulator `.meas` output is parsed into `res.measures`, and node naming is normalized across backends so `res["vout"]` means the same thing no matter who ran the simulation.
 
 ## Circuit IR
 
@@ -298,7 +295,7 @@ The Python bindings are a default feature. Turn them off to use the crate on its
 spicerack = { version = "0.1", default-features = false }
 ```
 
-That gives you the circuit builder, the IR and code generators, backend drivers, and the raw and PSF parsers, with no Python or PyO3 in the build.
+That gives you the circuit builder, the IR and code generators, backend drivers, and the raw-file parsers, with no Python or PyO3 in the build.
 
 ## Examples
 

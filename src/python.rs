@@ -1079,80 +1079,6 @@ impl PySimulator {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
-    // ── Xyce-specific analysis methods ──
-
-    /// Xyce .SAMPLING Monte Carlo uncertainty quantification.
-    ///
-    /// `param_distributions` is a list of `(param_name, distribution_spec)` tuples.
-    /// Distribution specs: `"normal(mean,stddev)"`, `"uniform(low,high)"`.
-    #[pyo3(signature = (num_samples, param_distributions))]
-    fn xyce_sampling(
-        &self, num_samples: u32,
-        param_distributions: Vec<(String, String)>,
-    ) -> PyResult<PySamplingAnalysis> {
-        let refs: Vec<(&str, &str)> = param_distributions
-            .iter()
-            .map(|(p, d)| (p.as_str(), d.as_str()))
-            .collect();
-        self.inner
-            .xyce_sampling(num_samples, &refs)
-            .map(|s| PySamplingAnalysis { inner: s })
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
-    }
-
-    /// Xyce .EMBEDDEDSAMPLING — embedded Monte Carlo.
-    #[pyo3(signature = (num_samples, param_distributions))]
-    fn xyce_embedded_sampling(
-        &self, num_samples: u32,
-        param_distributions: Vec<(String, String)>,
-    ) -> PyResult<PySamplingAnalysis> {
-        let refs: Vec<(&str, &str)> = param_distributions
-            .iter()
-            .map(|(p, d)| (p.as_str(), d.as_str()))
-            .collect();
-        self.inner
-            .xyce_embedded_sampling(num_samples, &refs)
-            .map(|s| PySamplingAnalysis { inner: s })
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
-    }
-
-    /// Xyce .PCE Polynomial Chaos Expansion.
-    #[pyo3(signature = (num_samples, param_distributions, expansion_order=3))]
-    fn xyce_pce(
-        &self, num_samples: u32,
-        param_distributions: Vec<(String, String)>,
-        expansion_order: u32,
-    ) -> PyResult<PySamplingAnalysis> {
-        let refs: Vec<(&str, &str)> = param_distributions
-            .iter()
-            .map(|(p, d)| (p.as_str(), d.as_str()))
-            .collect();
-        self.inner
-            .xyce_pce(num_samples, &refs, expansion_order)
-            .map(|s| PySamplingAnalysis { inner: s })
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
-    }
-
-    /// Xyce .FFT with spectral metrics (ENOB, SFDR, SNR, THD).
-    #[pyo3(signature = (signal, np=1024, start=0.0, stop=1e-3, window="HANN", format="UNORM"))]
-    fn xyce_fft(
-        &self, signal: &str,
-        np: u32, start: f64, stop: f64,
-        window: &str, format: &str,
-    ) -> PyResult<PyXyceFftAnalysis> {
-        let options = crate::result::XyceFftOptions {
-            np,
-            start,
-            stop,
-            window: window.to_string(),
-            format: format.to_string(),
-        };
-        self.inner
-            .xyce_fft(signal, &options)
-            .map(|f| PyXyceFftAnalysis { inner: f })
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
-    }
-
     // ── Spectre-specific analysis methods ──
 
     /// Spectre parametric sweep wrapping an inner analysis.
@@ -1287,11 +1213,6 @@ fn emit_ir_netlist(ir: &crate::ir::CircuitIR, backend: &str) -> PyResult<String>
         "ngspice" | "ngspice-subprocess" | "ngspice-shared" => {
             crate::codegen::spice3::Spice3CodeGen {
                 dialect: crate::codegen::spice3::Spice3Dialect::Ngspice,
-            }.emit_netlist(ir)
-        }
-        "xyce" | "xyce-serial" | "xyce-parallel" => {
-            crate::codegen::spice3::Spice3CodeGen {
-                dialect: crate::codegen::spice3::Spice3Dialect::Xyce,
             }.emit_netlist(ir)
         }
         "ltspice" => {
@@ -1737,8 +1658,6 @@ impl PyTransientNoiseAnalysis {
     fn measures(&self) -> HashMap<String, f64> { measures_to_dict(&self.inner.base.measures) }
 }
 
-// ── Xyce-specific result bindings ──
-
 #[pyclass(name = "SamplingAnalysis")]
 struct PySamplingAnalysis {
     inner: crate::result::SamplingAnalysis,
@@ -1754,39 +1673,6 @@ impl PySamplingAnalysis {
         self.inner.base.get(name).map(|wf| wf.data.clone())
             .ok_or_else(|| PyAttributeError::new_err(format!("No node '{}'", name)))
     }
-    #[getter]
-    fn measures(&self) -> HashMap<String, f64> { measures_to_dict(&self.inner.base.measures) }
-}
-
-#[pyclass(name = "XyceFftAnalysis")]
-struct PyXyceFftAnalysis {
-    inner: crate::result::XyceFftAnalysis,
-}
-
-#[pymethods]
-impl PyXyceFftAnalysis {
-    fn __getitem__(&self, name: &str) -> PyResult<Vec<f64>> {
-        self.inner.base.get(name).map(|wf| wf.data.clone())
-            .ok_or_else(|| PyKeyError::new_err(format!("Node '{}' not found", name)))
-    }
-    fn __getattr__(&self, name: &str) -> PyResult<Vec<f64>> {
-        self.inner.base.get(name).map(|wf| wf.data.clone())
-            .ok_or_else(|| PyAttributeError::new_err(format!("No node '{}'", name)))
-    }
-    #[getter]
-    fn frequency(&self) -> Vec<f64> { self.inner.frequency.clone() }
-    #[getter]
-    fn magnitude(&self) -> Vec<f64> { self.inner.magnitude.clone() }
-    #[getter]
-    fn phase(&self) -> Vec<f64> { self.inner.phase.clone() }
-    #[getter]
-    fn enob(&self) -> f64 { self.inner.enob }
-    #[getter]
-    fn sfdr_db(&self) -> f64 { self.inner.sfdr_db }
-    #[getter]
-    fn snr_db(&self) -> f64 { self.inner.snr_db }
-    #[getter]
-    fn thd_db(&self) -> f64 { self.inner.thd_db }
     #[getter]
     fn measures(&self) -> HashMap<String, f64> { measures_to_dict(&self.inner.base.measures) }
 }
@@ -3903,30 +3789,8 @@ impl PyTestbench {
         });
     }
 
-    #[pyo3(signature = (num_samples, distributions))]
-    fn add_xyce_sampling(&mut self, num_samples: u32, distributions: HashMap<String, String>) {
-        self.inner.analyses.push(crate::ir::Analysis::XyceSampling {
-            num_samples,
-            distributions: distributions.into_iter().collect(),
-        });
-    }
 
-    #[pyo3(signature = (num_samples, distributions))]
-    fn add_xyce_embedded_sampling(&mut self, num_samples: u32, distributions: HashMap<String, String>) {
-        self.inner.analyses.push(crate::ir::Analysis::XyceEmbeddedSampling {
-            num_samples,
-            distributions: distributions.into_iter().collect(),
-        });
-    }
 
-    #[pyo3(signature = (num_samples, distributions, order=2))]
-    fn add_xyce_pce(&mut self, num_samples: u32, distributions: HashMap<String, String>, order: u32) {
-        self.inner.analyses.push(crate::ir::Analysis::XycePce {
-            num_samples,
-            distributions: distributions.into_iter().collect(),
-            order,
-        });
-    }
 
     #[pyo3(signature = (param, start, stop, step, inner_analysis, inner_type))]
     fn add_spectre_sweep(&mut self, param: &str, start: f64, stop: f64, step: f64, inner_analysis: &str, inner_type: &str) {
@@ -4441,9 +4305,7 @@ pub fn spicerack(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTransientNoiseAnalysis>()?;
     // Spectre raw data type
     m.add_class::<PyRawData>()?;
-    // Xyce-specific analysis types
     m.add_class::<PySamplingAnalysis>()?;
-    m.add_class::<PyXyceFftAnalysis>()?;
 
     // IR types
     m.add_class::<PySubcircuit>()?;

@@ -1,6 +1,6 @@
 ---
 name: spicerack
-description: Build SPICE circuits, netlists and testbenches with SpiceRack (`import spicerack`). Use when writing or debugging circuit-simulation code that imports spicerack, when picking a backend (ngspice/Xyce/LTspice/Spectre/vacask), when extracting a metric such as gain, bandwidth or phase margin from a simulation result, or when reaching for the built-in analog testbench recipes.
+description: Build SPICE circuits, netlists and testbenches with SpiceRack (`import spicerack`). Use when writing or debugging circuit-simulation code that imports spicerack, when picking a backend (ngspice/LTspice/VACASK/Spectre), when extracting a metric such as gain, bandwidth or phase margin from a simulation result, or when reaching for the built-in analog testbench recipes.
 ---
 
 SpiceRack builds a **deck** (SPICE netlist text), hands it to a simulator, and parses the result back into Python lists.
@@ -33,7 +33,7 @@ Each of these returns a plausible wrong number rather than an error.
 
 **`ac[node]` is the real part, not the magnitude.** For a Bode plot use `ac.magnitude(node)`, `ac.magnitude_db(node)` and `ac.phase(node)` (degrees). At 100 Hz on a 159 Hz RC, `ac["vout"]` reads 0.7170 while `|H|` is 0.8467. `.magnitude()` exists only on `AcAnalysis`.
 
-**ngspice ignores `.step`.** The codegen emits it commented out (`* .step param temp ...`), so a swept bench runs once and silently reports one operating point. Sweep by rebuilding the testbench in a Python loop, one run per point. Xyce and LTspice support `.step` natively.
+**ngspice ignores `.step`.** The codegen emits it commented out (`* .step param temp ...`), so a swept bench runs once and silently reports one operating point. Sweep by rebuilding the testbench in a Python loop, one run per point. LTspice, VACASK and Spectre support parameter sweeps natively.
 
 **Use ASCII micro units: `u_uF`, `u_uH`, `u_uA`, `u_uV`, `u_uW`, `u_us`.** Python normalises identifiers, so a `u_µF` spelled with U+00B5 cannot be imported. The `u_Ω` family does work.
 

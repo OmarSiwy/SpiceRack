@@ -6,9 +6,6 @@ fn test_backend_kind_from_str() {
     assert_eq!(BackendKind::from_str("ngspice"), Some(BackendKind::NgspiceSubprocess));
     assert_eq!(BackendKind::from_str("ngspice-subprocess"), Some(BackendKind::NgspiceSubprocess));
     assert_eq!(BackendKind::from_str("ngspice-shared"), Some(BackendKind::NgspiceShared));
-    assert_eq!(BackendKind::from_str("xyce"), Some(BackendKind::XyceSerial));
-    assert_eq!(BackendKind::from_str("xyce-serial"), Some(BackendKind::XyceSerial));
-    assert_eq!(BackendKind::from_str("xyce-parallel"), Some(BackendKind::XyceParallel));
     assert!(BackendKind::from_str("vacask").is_some());
     assert_eq!(BackendKind::from_str("vacask-shared"), Some(BackendKind::VacaskShared));
     assert!(BackendKind::from_str("spectre").is_some());
@@ -20,8 +17,6 @@ fn test_backend_kind_from_str() {
 fn test_backend_display_names() {
     assert_eq!(BackendKind::NgspiceSubprocess.display_name(), "ngspice");
     assert_eq!(BackendKind::NgspiceShared.display_name(), "ngspice-shared");
-    assert_eq!(BackendKind::XyceSerial.display_name(), "xyce");
-    assert_eq!(BackendKind::XyceParallel.display_name(), "xyce-parallel");
     assert_eq!(BackendKind::Vacask.display_name(), "vacask");
     assert_eq!(BackendKind::VacaskShared.display_name(), "vacask-shared");
     assert_eq!(BackendKind::Spectre.display_name(), "spectre");
@@ -50,7 +45,6 @@ fn test_backend_override_creates_simulator() {
 
     // All these should create simulators without panicking
     let _ = c.simulator_with_backend("ngspice");
-    let _ = c.simulator_with_backend("xyce");
     let _ = c.simulator_with_backend("ltspice");
     let _ = c.simulator_with_backend("vacask");
     let _ = c.simulator_with_backend("spectre");
@@ -243,79 +237,6 @@ fn test_simulator_features_step_params() {
 }
 
 // ── Vacask SPICE-to-Vacask translator tests ──
-
-#[test]
-fn test_vacask_translate_resistor() {
-    let input = ".title test\nR1 a b 1k\n.end";
-    let output = spicerack::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("r1 (a b) resistor r=1k"));
-}
-
-#[test]
-fn test_vacask_translate_voltage_source() {
-    let input = ".title test\nV1 vdd 0 DC 3.3\n.end";
-    let output = spicerack::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("v1 (vdd 0) vsource dc=3.3"));
-}
-
-#[test]
-fn test_vacask_translate_mosfet() {
-    let input = ".title test\nM1 drain gate source bulk nmos W=1u L=100n\n.end";
-    let output = spicerack::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("m1 (drain gate source bulk) nmos"));
-    assert!(output.contains("w=1u"));
-    assert!(output.contains("l=100n"));
-}
-
-#[test]
-fn test_vacask_translate_ac_analysis() {
-    let input = ".title test\nV1 in 0 1\n.ac dec 10 1 1G\n.end";
-    let output = spicerack::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("ac start=1 stop=1G dec=10"));
-}
-
-#[test]
-fn test_vacask_translate_tran_analysis() {
-    let input = ".title test\nV1 in 0 1\n.tran 1u 10m\n.end";
-    let output = spicerack::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("tran stop=10m"));
-}
-
-#[test]
-fn test_vacask_translate_op_analysis() {
-    let input = ".title test\nV1 in 0 1\n.op\n.end";
-    let output = spicerack::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("() dc"), "expected '() dc' in: {}", output);
-}
-
-#[test]
-fn test_vacask_translate_include() {
-    let input = ".title test\n.include /path/to/model.lib\n.end";
-    let output = spicerack::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("include /path/to/model.lib"));
-}
-
-#[test]
-fn test_vacask_translate_param() {
-    let input = ".title test\n.param vdd=3.3\n.end";
-    let output = spicerack::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("parameters vdd=3.3"));
-}
-
-#[test]
-fn test_vacask_translate_subcircuit() {
-    let input = ".title test\n.SUBCKT mybuf in out vdd\nM1 out in vdd vdd pmos\n.ENDS\n.end";
-    let output = spicerack::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("subckt mybuf (in out vdd)"));
-    assert!(output.contains("ends"));
-}
-
-#[test]
-fn test_vacask_translate_comments() {
-    let input = ".title test\n* This is a comment\nR1 a b 1k\n.end";
-    let output = spicerack::backend::vacask::spice_to_vacask(input);
-    assert!(output.contains("// This is a comment"));
-}
 
 // ── LTspice netlist normalization tests ──
 

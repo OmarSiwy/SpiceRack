@@ -6,18 +6,36 @@ use crate::result::RawData;
 use crate::rawfile;
 use super::{Backend, BackendCapabilities, BackendError};
 
-/// Vacask subprocess backend: translate SPICE→Vacask, run `vacask`, read .raw
+/// Vacask subprocess backend: emit a native VACASK deck, run `vacask`, read
+/// back the per-analysis `.raw` file.
 pub struct VacaskSubprocess;
 
 pub const VACASK_CAPS: BackendCapabilities = BackendCapabilities {
     xspice: false,
+    // `load "x.osdi"`, and the whole SPICE device set ships as OSDI modules.
     osdi: true,
+    // `measure` is "Command not found": VACASK has no measurement statement.
     measures: false,
-    step_params: false,
+    // `var x=...` in the control block is visible to the netlist body and
+    // `sweep s variable="x" ...` sweeps it. Verified against the binary.
+    step_params: true,
+    // VACASK's `control`/`endc` is not ngspice's `.control` scripting.
     control_blocks: false,
     laplace_sources: false,
     verilog_cosim: false,
 };
+
+/// Why the SPICE-string path cannot be served. Spelled once so both backends
+/// say the same thing.
+fn no_spice_string_path() -> BackendError {
+    BackendError::SimulationError(
+        "vacask reads its own netlist language, not SPICE: there is no faithful \
+         line-by-line translation of a finished SPICE deck. Build the circuit \
+         through the IR/Testbench API so `VacaskCodeGen` emits a native deck, \
+         or hand `run_netlist` a deck you wrote in VACASK's own syntax."
+            .to_string(),
+    )
+}
 
 impl Backend for VacaskSubprocess {
     fn name(&self) -> &str {
@@ -30,9 +48,8 @@ impl Backend for VacaskSubprocess {
         Box::new(crate::codegen::vacask::VacaskCodeGen)
     }
 
-    fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
-        let vacask_netlist = spice_to_vacask(netlist);
-        self.run_vacask_netlist(&vacask_netlist)
+    fn run(&self, _netlist: &str) -> Result<RawData, BackendError> {
+        Err(no_spice_string_path())
     }
 
     fn run_netlist(&self, netlist: &str) -> Result<RawData, BackendError> {
@@ -45,29 +62,44 @@ impl VacaskSubprocess {
         let tmp_dir = TempDir::new()?;
         let sim_path = tmp_dir.path().join("circuit.sim");
 
-        std::fs::write(&sim_path, netlist.as_bytes())?;
+        // The deck runs in a scratch dir so the per-analysis raw files land
+        // somewhere disposable, which moves any relative `load`/`include` path
+        // out from under the user's cwd. Resolve those before writing.
+        std::fs::write(&sim_path, absolutize_paths(netlist).as_bytes())?;
 
         let output = Command::new("vacask")
+            // -se/-sp: a deck may carry `embed`/`postprocess` steps, which write
+            // files and shell out to Python. Neither produces a raw file.
+            .args(["-se", "-sp"])
             .arg(&sim_path)
             .current_dir(tmp_dir.path())
             .output()?;
 
+        let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
+
+        // A parse error still exits nonzero, but a failed analysis can exit 0
+        // with nothing written, so the raw file is the real success test.
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
             return Err(BackendError::SimulationError(format!(
                 "vacask exited with status {}\nstdout: {}\nstderr: {}",
                 output.status,
-                stdout.chars().take(500).collect::<String>(),
-                stderr.chars().take(500).collect::<String>(),
+                tail(&stdout_str),
+                tail(&stderr_str),
             )));
         }
 
-        let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
-
-        // Vacask names output files by analysis name (e.g., "op1.raw", "ac1.raw")
-        // Find the first .raw file in the output directory
-        let raw_path = find_raw_file(tmp_dir.path())?;
+        // VACASK writes one raw file per analysis, named after it. Take the
+        // last analysis the deck declares: that is the one the caller asked
+        // for in the single-analysis path, and a deterministic choice
+        // otherwise (read_dir order is not).
+        let raw_path = raw_file_for(tmp_dir.path(), netlist).ok_or_else(|| {
+            BackendError::SimulationError(format!(
+                "vacask produced no .raw output\nstdout: {}\nstderr: {}",
+                tail(&stdout_str),
+                tail(&stderr_str),
+            ))
+        })?;
         let raw_bytes = std::fs::read(&raw_path).map_err(|e| {
             BackendError::SimulationError(format!(
                 "Failed to read raw file '{}': {}",
@@ -81,27 +113,79 @@ impl VacaskSubprocess {
     }
 }
 
-fn find_raw_file(dir: &std::path::Path) -> Result<std::path::PathBuf, BackendError> {
-    let entries = std::fs::read_dir(dir).map_err(|e| {
-        BackendError::SimulationError(format!("Failed to read output dir: {}", e))
-    })?;
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|e| e == "raw") {
-            return Ok(path);
-        }
-    }
-
-    Err(BackendError::SimulationError(
-        "No .raw output file produced by vacask".to_string(),
-    ))
+fn tail(s: &str) -> String {
+    let start = s.len().saturating_sub(800);
+    s[start..].to_string()
 }
 
-/// Translate a SPICE netlist to Vacask (Spectre-like) format.
-///
-/// Handles the most common elements. Users needing advanced Vacask features
-/// should write Vacask netlists directly.
+/// Analysis names declared by a deck, in order: `analysis <name> <kind> ...`.
+pub fn analysis_names(netlist: &str) -> Vec<String> {
+    netlist
+        .lines()
+        .filter_map(|l| {
+            let mut w = l.split_whitespace();
+            (w.next()? == "analysis").then(|| w.next().map(str::to_string))?
+        })
+        .collect()
+}
+
+/// The raw file to read back: the last declared analysis that produced one,
+/// falling back to whatever landed for a deck we could not parse.
+fn raw_file_for(dir: &std::path::Path, netlist: &str) -> Option<std::path::PathBuf> {
+    for name in analysis_names(netlist).iter().rev() {
+        let p = dir.join(format!("{}.raw", name));
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let mut found: Vec<_> = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "raw"))
+        .collect();
+    found.sort();
+    found.pop()
+}
+
+/// Rewrite relative `load "x"` / `include "x"` paths that exist under the
+/// caller's cwd into absolute ones. A bare module name (`spice/diode.osdi`)
+/// resolves through VACASK's own module path and is left alone.
+fn absolutize_paths(netlist: &str) -> String {
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(_) => return netlist.to_string(),
+    };
+    netlist
+        .lines()
+        .map(|line| {
+            let t = line.trim_start();
+            if !(t.starts_with("load \"") || t.starts_with("include \"")) {
+                return line.to_string();
+            }
+            let Some(open) = line.find('"') else { return line.to_string() };
+            let Some(close) = line[open + 1..].find('"').map(|i| open + 1 + i) else {
+                return line.to_string();
+            };
+            let path = &line[open + 1..close];
+            let abs = cwd.join(path);
+            if std::path::Path::new(path).is_absolute() || !abs.is_file() {
+                return line.to_string();
+            }
+            format!("{}{}{}", &line[..open + 1], abs.display(), &line[close..])
+        })
+        .collect::<Vec<_>>()
+        // The trailing newline is load-bearing: VACASK's `endc` wants one.
+        .join("\n") + "\n"
+}
+
+/// DEAD: a line-by-line SPICE rewriter that emits Spectre-ish text VACASK's
+/// parser rejects (`save V(vout)` -> "unexpected identifier, expecting (",
+/// `op1 () dc` -> not a statement, no `ground`/`model`/`control` scaffolding at
+/// all). It is no longer on any run path — `VacaskSubprocess::run` refuses
+/// instead — and survives only because `tests/test_backends.rs` pins its
+/// output. The working path is `codegen::vacask::VacaskCodeGen`, which emits
+/// from the IR. Delete this together with those tests.
 pub fn spice_to_vacask(spice: &str) -> String {
     let mut out = String::with_capacity(spice.len() * 2);
     let mut analysis_counter: u32 = 0;
@@ -768,9 +852,8 @@ impl Backend for VacaskLibrary {
         Box::new(crate::codegen::vacask::VacaskCodeGen)
     }
 
-    fn run(&self, netlist: &str) -> Result<RawData, BackendError> {
-        let vacask_netlist = spice_to_vacask(netlist);
-        self.run_vacask_netlist(&vacask_netlist)
+    fn run(&self, _netlist: &str) -> Result<RawData, BackendError> {
+        Err(no_spice_string_path())
     }
 
     fn run_netlist(&self, netlist: &str) -> Result<RawData, BackendError> {
@@ -854,15 +937,40 @@ mod tests {
     fn test_vacask_library_op() {
         let lib = VacaskLibrary::new().expect("Failed to load libvacask.so");
 
+        // Native VACASK, not SPICE: `run` refuses a SPICE string outright.
         let netlist = "\
-            test op\n\
-            V1 vdd 0 3.3\n\
-            R1 vdd out 1k\n\
-            R2 out 0 2k\n\
-            .op\n\
-            .end\n";
+test op
 
-        let result = lib.run(netlist);
+ground 0
+
+load \"spice/resistor.osdi\"
+
+model resistor sp_resistor
+model vsource vsource
+
+v1 (vdd 0) vsource dc=3.3
+r1 (vdd out) resistor r=1k
+r2 (out 0) resistor r=2k
+
+control
+  options rawfile=\"binary\"
+  analysis op1 op
+endc
+";
+
+        let result = lib.run_netlist(netlist);
         assert!(result.is_ok(), "Simulation failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn analysis_names_are_read_off_the_deck_in_order() {
+        let deck = "x\ncontrol\n  analysis op1 op\n  sweep s instance=\"v1\" parameter=\"dc\"\n    analysis dc1 op\nendc\n";
+        assert_eq!(analysis_names(deck), vec!["op1", "dc1"]);
+    }
+
+    #[test]
+    fn the_spice_string_path_refuses_instead_of_emitting_a_broken_deck() {
+        let err = VacaskSubprocess.run("v1 1 0 dc 1\n.op\n.end\n").unwrap_err();
+        assert!(err.to_string().contains("own netlist language"), "{}", err);
     }
 }

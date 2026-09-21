@@ -24,13 +24,6 @@ pub fn detect_backends() -> &'static Vec<BackendKind> {
             backends.push(BackendKind::NgspiceSubprocess);
         }
 
-        // Xyce
-        if is_on_path("Xyce") {
-            backends.push(BackendKind::XyceSerial);
-            if is_on_path("mpirun") {
-                backends.push(BackendKind::XyceParallel);
-            }
-        }
 
         // LTspice (platform-specific detection)
         if let Some((executable, use_wine)) = ltspice::detect_ltspice() {

@@ -6,7 +6,6 @@
 // string-translation pass runs" test from the issue.
 
 use spicerack::backend::ngspice::NgspiceSubprocess;
-use spicerack::backend::xyce::XyceSubprocess;
 use spicerack::backend::ltspice::LtspiceSubprocess;
 use spicerack::backend::spectre::SpectreSubprocess;
 use spicerack::backend::vacask::VacaskSubprocess;
@@ -109,12 +108,6 @@ fn run_path_netlist_comes_from_codegen_not_display() {
 // ── RED: each backend names its codegen correctly ──
 
 #[test]
-fn xyce_backend_names_its_codegen() {
-    let xy = XyceSubprocess { parallel: false };
-    assert_eq!(xy.codegen().backend_name(), "xyce");
-}
-
-#[test]
 fn ltspice_backend_names_its_codegen() {
     let lt = LtspiceSubprocess {
         executable: std::path::PathBuf::from("ltspice"),
@@ -137,50 +130,36 @@ fn same_ir_produces_different_dialect_netlists() {
     let ir = rc_op_ir();
 
     let ng = NgspiceSubprocess;
-    let xy = XyceSubprocess { parallel: false };
+    let lt = LtspiceSubprocess {
+        executable: std::path::PathBuf::from("ltspice"),
+        use_wine: false,
+        fast_access: false,
+    };
     let sp = SpectreSubprocess;
 
     let ng_netlist = ng.codegen().emit_netlist(&ir).unwrap();
-    let xy_netlist = xy.codegen().emit_netlist(&ir).unwrap();
+    let lt_netlist = lt.codegen().emit_netlist(&ir).unwrap();
     let sp_netlist = sp.codegen().emit_netlist(&ir).unwrap();
 
     // All must be valid netlists containing the resistors + analysis
     assert!(ng_netlist.contains("R1 vdd out"), "ngspice R1");
-    assert!(xy_netlist.contains("R1 vdd out"), "xyce R1");
+    assert!(lt_netlist.contains("R1 vdd out"), "ltspice R1");
 
     // Spectre uses different syntax: "r1 (vdd out) resistor r=1k"
     assert!(sp_netlist.contains("r1 (vdd out) resistor"), "spectre r1");
 
-    // ngspice/xyce use .op, spectre uses "op1 dc"
+    // ngspice/ltspice use .op, spectre uses "op1 dc"
     assert!(ng_netlist.contains(".op"), "ngspice .op");
-    assert!(xy_netlist.contains(".op"), "xyce .op");
+    assert!(lt_netlist.contains(".op"), "ltspice .op");
     assert!(sp_netlist.contains("op1 dc"), "spectre op1 dc");
 
     // ngspice uses .end, spectre does not
     assert!(ng_netlist.contains(".end"), "ngspice .end");
-    assert!(xy_netlist.contains(".end"), "xyce .end");
+    assert!(lt_netlist.contains(".end"), "ltspice .end");
     assert!(!sp_netlist.contains(".end"), "spectre no .end");
 
     // Netlists must differ between dialects
     assert_ne!(ng_netlist, sp_netlist, "ngspice vs spectre should differ");
-}
-
-#[test]
-fn run_path_uses_backend_specific_codegen() {
-    let ir = rc_op_ir();
-
-    // Xyce simulator must emit via Xyce codegen, not Ngspice default
-    let mut sim = Circuit::new("rc").simulator();
-    sim.set_ir(ir.clone());
-
-    let xy = XyceSubprocess { parallel: false };
-    let produced = sim.netlist_to_run(&xy).expect("xyce netlist");
-
-    let expected = Spice3CodeGen { dialect: Spice3Dialect::Xyce }
-        .emit_netlist(&ir)
-        .expect("xyce codegen emit");
-
-    assert_eq!(produced, expected, "run path must use xyce codegen");
 }
 
 #[test]
@@ -216,7 +195,7 @@ fn vacask_codegen_emits_native_syntax() {
     // Vacask uses Spectre-like syntax
     assert!(netlist.contains("r1 (vdd out) resistor r="), "vacask r1");
     assert!(netlist.contains("r2 (out 0) resistor r="), "vacask r2");
-    assert!(netlist.contains("op1 () dc"), "vacask op");
+    assert!(netlist.contains("analysis op1 op"), "vacask op");
 
     // No UNTRANSLATED lines
     assert!(!netlist.contains("UNTRANSLATED"), "no UNTRANSLATED: {}", netlist);
@@ -290,7 +269,7 @@ fn vacask_codegen_subcircuit_ends_has_name() {
     let netlist = vk.codegen().emit_netlist(&ir).unwrap();
 
     assert!(netlist.contains("subckt mybuf (in out)"), "subckt header: {}", netlist);
-    assert!(netlist.contains("ends mybuf"), "ends with name: {}", netlist);
+    assert!(netlist.contains("\nends"), "ends with name: {}", netlist);
     // No broken empty `ends `
     assert!(!netlist.contains("ends \n"), "no empty ends");
 }

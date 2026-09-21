@@ -130,7 +130,7 @@ impl CircuitSimulator {
         self.measures.push(parts.join(" "));
     }
 
-    /// Add a linear `.step param` sweep (LTspice/Xyce compatible)
+    /// Add a linear `.step param` sweep (LTspice/Spectre compatible)
     pub fn step(&mut self, param: &str, start: f64, stop: f64, step: f64) {
         self.step_params.push(StepParam {
             param: param.to_string(),
@@ -370,7 +370,6 @@ impl CircuitSimulator {
     ) -> Result<SParamAnalysis, BackendError> {
         // Different backends use different syntax:
         // ngspice: .sp dec N fstart fstop
-        // xyce: .AC + .LIN sparcalc=1
         let analysis = format!(
             ".sp {} {} {} {}",
             variation, number_of_points, start_frequency, stop_frequency
@@ -379,9 +378,9 @@ impl CircuitSimulator {
         Ok(SParamAnalysis::from_raw(raw))
     }
 
-    /// Harmonic Balance analysis (Xyce, Vacask, Spectre).
+    /// Harmonic Balance analysis (Vacask, Spectre).
     ///
-    /// Xyce uses a single `numfreq` value for all tones, so we take the max of
+    /// A single `numfreq` covers all tones, so we take the max of
     /// the `num_harmonics` slice and emit `.OPTIONS HBINT numfreq=N` before `.HB`.
     pub fn harmonic_balance(
         &self,
@@ -392,7 +391,7 @@ impl CircuitSimulator {
             .map(|f| format!("{}", f))
             .collect();
 
-        // Xyce uses one numfreq for all tones — take the max
+        // one numfreq for all tones — take the max
         let max_harmonics = num_harmonics.iter().copied().max().unwrap_or(7);
         let options_line = format!(".OPTIONS HBINT numfreq={}", max_harmonics);
         let hb_line = format!(".HB {}", freq_str.join(" "));
@@ -548,97 +547,7 @@ impl CircuitSimulator {
         )
     }
 
-    // ── Xyce-specific analyses ──
 
-    /// Xyce .SAMPLING Monte Carlo uncertainty quantification.
-    ///
-    /// `param_distributions` is a slice of `(param_name, distribution_spec)` pairs.
-    /// Distribution specs use Xyce syntax: `"normal(mean,stddev)"`, `"uniform(low,high)"`.
-    ///
-    /// Generates:
-    /// ```spice
-    /// .SAMPLING
-    /// .options SAMPLES num_samples=100 projection_type=MC
-    /// .options SAMPLES param=R1:R dist=normal(1000,50)
-    /// ```
-    pub fn xyce_sampling(
-        &self,
-        num_samples: u32,
-        param_distributions: &[(&str, &str)],
-    ) -> Result<SamplingAnalysis, BackendError> {
-        let analysis = build_xyce_sampling_stmt(
-            ".SAMPLING", num_samples, param_distributions, None,
-        );
-        let raw = self.run(&analysis, "sampling")?;
-        Ok(SamplingAnalysis::from_raw(raw))
-    }
-
-    /// Xyce .EMBEDDEDSAMPLING — embeds Monte Carlo into time/freq analysis.
-    ///
-    /// Same parameters as `xyce_sampling` but uses `.EMBEDDEDSAMPLING` directive.
-    pub fn xyce_embedded_sampling(
-        &self,
-        num_samples: u32,
-        param_distributions: &[(&str, &str)],
-    ) -> Result<SamplingAnalysis, BackendError> {
-        let analysis = build_xyce_sampling_stmt(
-            ".EMBEDDEDSAMPLING", num_samples, param_distributions, None,
-        );
-        let raw = self.run(&analysis, "embedded_sampling")?;
-        Ok(SamplingAnalysis::from_raw(raw))
-    }
-
-    /// Xyce .PCE Polynomial Chaos Expansion uncertainty quantification.
-    ///
-    /// `expansion_order` controls the PCE polynomial order (typically 2-5).
-    pub fn xyce_pce(
-        &self,
-        num_samples: u32,
-        param_distributions: &[(&str, &str)],
-        expansion_order: u32,
-    ) -> Result<SamplingAnalysis, BackendError> {
-        let analysis = build_xyce_sampling_stmt(
-            ".PCE", num_samples, param_distributions, Some(expansion_order),
-        );
-        let raw = self.run(&analysis, "pce")?;
-        Ok(SamplingAnalysis::from_raw(raw))
-    }
-
-    /// Xyce .FFT with spectral metrics (ENOB, SFDR, SNR, THD).
-    ///
-    /// Requires a transient analysis to have been set up (adds .tran internally).
-    /// The FFT is computed by Xyce and metrics are derived from the magnitude data.
-    ///
-    /// Generates:
-    /// ```spice
-    /// .tran <step> <stop>
-    /// .FFT V(out) NP=1024 START=0 STOP=1m WINDOW=HANN FORMAT=UNORM
-    /// ```
-    pub fn xyce_fft(
-        &self,
-        signal: &str,
-        options: &XyceFftOptions,
-    ) -> Result<XyceFftAnalysis, BackendError> {
-        let fft_stmt = format!(
-            ".FFT {} NP={} START={} STOP={} WINDOW={} FORMAT={}",
-            signal, options.np, options.start, options.stop, options.window, options.format
-        );
-
-        // FFT requires a transient run — compute step from NP and time window
-        let time_span = options.stop - options.start;
-        let tran_step = if options.np > 0 {
-            time_span / (options.np as f64)
-        } else {
-            time_span / 1024.0
-        };
-        let tran_stmt = format!(".tran {} {}", tran_step, options.stop);
-        let combined = format!("{}\n{}", tran_stmt, fft_stmt);
-
-        let raw = self.run(&combined, "tran")?;
-        Ok(XyceFftAnalysis::from_raw(raw))
-    }
-
-    /// List all available backends on this system
     pub fn available_backends() -> Vec<String> {
         detect::detect_backends()
             .iter()
@@ -765,6 +674,11 @@ impl CircuitSimulator {
             };
             backend.run_netlist(&netlist)?
         } else {
+            // `Circuit::Display` cannot return an error, so a Laplace source it
+            // could not translate would reach the simulator as fatal text.
+            if let Some(why) = self.circuit.laplace_error(&backend_name) {
+                return Err(BackendError::SimulationError(why));
+            }
             let netlist = self.build_netlist(analysis_stmt);
             backend.run(&netlist)?
         };
@@ -787,36 +701,6 @@ impl CircuitSimulator {
     }
 }
 
-/// Build a Xyce sampling/PCE analysis statement block.
-fn build_xyce_sampling_stmt(
-    directive: &str,
-    num_samples: u32,
-    param_distributions: &[(&str, &str)],
-    expansion_order: Option<u32>,
-) -> String {
-    let mut lines = Vec::new();
-    lines.push(directive.to_string());
-
-    if let Some(order) = expansion_order {
-        // PCE mode
-        lines.push(format!(
-            ".options SAMPLES num_samples={} expansion_order={}",
-            num_samples, order
-        ));
-    } else {
-        // MC sampling mode
-        lines.push(format!(
-            ".options SAMPLES num_samples={} projection_type=MC",
-            num_samples
-        ));
-    }
-
-    for (param, dist) in param_distributions {
-        lines.push(format!(".options SAMPLES param={} dist={}", param, dist));
-    }
-
-    lines.join("\n")
-}
 
 impl Circuit {
     pub fn simulator(&self) -> CircuitSimulator {

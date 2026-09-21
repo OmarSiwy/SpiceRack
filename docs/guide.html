@@ -49,7 +49,7 @@ maturin develop</code></pre>
 <table>
 <tr><th>Tool</th><th>Needed for</th></tr>
 <tr><td><code>ngspice</code></td><td>Default backend; most features (XSPICE, OSDI, control blocks)</td></tr>
-<tr><td><code>xyce</code> / <code>ltspice</code> / <code>spectre</code> / <code>vacask</code></td><td>Alternative backends</td></tr>
+<tr><td><code>ltspice</code> / <code>ltspice</code> / <code>spectre</code> / <code>vacask</code></td><td>Alternative backends</td></tr>
 <tr><td><code>openvaf</code></td><td>Compiling Verilog-A to OSDI (<code>veriloga()</code>, <code>compile_veriloga()</code>)</td></tr>
 <tr><td><code>iverilog</code></td><td>Digital Verilog co-simulation (<code>verilog(mode="simulate")</code>)</td></tr>
 <tr><td><code>yosys</code></td><td>Verilog synthesis to gate level (<code>verilog(mode="synthesize")</code>)</td></tr>
@@ -247,25 +247,17 @@ tb.transient_noise(step_time=1e-9, end_time=1e-6)</code></pre>
 <p>These run on <code>CircuitSimulator</code>. Spectre:
 <code>spectre_sweep</code>, <code>spectre_montecarlo</code>,
 <code>spectre_pac</code>, <code>spectre_pnoise</code>,
-<code>spectre_pxf</code>, <code>spectre_pstb</code>.
-Xyce: <code>xyce_sampling</code>, <code>xyce_embedded_sampling</code>,
-<code>xyce_pce</code>, <code>xyce_fft</code>. See the
+<code>spectre_pxf</code>, <code>spectre_pstb</code>. See the
 <a href="reference.html#backend-analyses">API reference</a> for signatures.</p>
-<pre><code>sim = circuit.simulator(simulator="xyce")
+<pre><code>sim = circuit.simulator(simulator="spectre")
 
-# Xyce Monte Carlo over device parameters
-res = sim.xyce_sampling(100, [("R1", "normal(1000,50)"),
-                              ("R2", "uniform(900,1100)")])
-
-# Xyce FFT with signal-quality metrics
-fft = sim.xyce_fft("V(vout)", np=1024, start=0.0, stop=1e-3, window="HANN")
-fft.enob, fft.sfdr_db, fft.snr_db, fft.thd_db</code></pre>
+# Monte Carlo around an inner transient
+res = sim.spectre_montecarlo(100, "tran1", "tran", seed=42)</code></pre>
 <p><code>Testbench</code> has builder forms instead, which add the directive
-to the generated netlist: <code>add_xyce_sampling</code>,
-<code>add_xyce_embedded_sampling</code>, <code>add_xyce_pce</code>,
-<code>add_spectre_sweep</code>, <code>add_spectre_monte_carlo</code>.</p>
-<pre><code>tb.add_xyce_sampling(100, {"R1": "normal(1000,50)"})
-netlist = tb.netlist("xyce")</code></pre>
+to the generated netlist: <code>add_spectre_sweep</code>,
+<code>add_spectre_monte_carlo</code>.</p>
+<pre><code>tb.add_spectre_monte_carlo(100, "tran1", "tran", seed=42)
+netlist = tb.netlist("spectre")</code></pre>
 
 <h2 id="results">Reading results</h2>
 <p>All result objects share one access pattern:</p>
@@ -301,18 +293,18 @@ tb.step_sweep("R1", 100, 10000, 10, "dec")         # lin | oct | dec</code></pre
 <h2 id="backends">Backends</h2>
 <pre><code>ps.CircuitSimulator.available_backends()   # what's installed locally
 tb.with_backend("vacask")                  # force a backend
-sim = circuit.simulator(simulator="xyce")  # Circuit-style override</code></pre>
+sim = circuit.simulator(simulator="ltspice")  # Circuit-style override</code></pre>
 <p>With no override, SpiceRack picks a backend automatically based on the
 circuit's features (XSPICE elements, OSDI models, measures, …) and the
 requested analysis. Capability matrix:</p>
 <table>
-<tr><th>Feature</th><th>ngspice</th><th>xyce</th><th>ltspice</th><th>vacask</th><th>spectre</th></tr>
-<tr><td>XSPICE (A-elements)</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>No</td></tr>
-<tr><td>OSDI (Verilog-A)</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+<tr><th>Feature</th><th>ngspice</th><th>ltspice</th><th>vacask</th><th>spectre</th></tr>
+<tr><td>XSPICE (A-elements)</td><td>Yes</td><td>No</td><td>No</td><td>No</td></tr>
+<tr><td>OSDI (Verilog-A)</td><td>Yes</td><td>No</td><td>Yes</td><td>Yes</td></tr>
 <tr><td>.measure</td><td>Yes</td><td>Yes</td><td>Yes</td><td>No</td><td>No</td></tr>
 <tr><td>.step parameters</td><td>No</td><td>Yes</td><td>Yes</td><td>No</td><td>Yes</td></tr>
-<tr><td>Control blocks</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>No</td></tr>
-<tr><td>Laplace sources</td><td>Yes</td><td>No</td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td>Control blocks</td><td>Yes</td><td>No</td><td>No</td><td>No</td></tr>
+<tr><td>Laplace sources</td><td>Yes</td><td>Yes</td><td>No</td><td>No</td></tr>
 <tr><td>Verilog co-sim</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>Yes</td></tr>
 </table>
 <p>Same DUT, loop over backends:</p>

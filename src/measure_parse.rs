@@ -8,11 +8,6 @@
 //! fall_time        =  1.987000e-09
 //! ```
 //!
-//! **Xyce** (stdout):
-//! ```text
-//! .MEASURE TRAN rise_time = 2.345000e-09
-//! ```
-//!
 //! **LTspice** (log file):
 //! ```text
 //! Measurement: rise_time
@@ -27,15 +22,10 @@ use crate::result::MeasureResult;
 pub fn parse_measures(text: &str, backend_name: &str) -> Vec<MeasureResult> {
     match backend_name {
         "ngspice-subprocess" | "ngspice" | "ngspice-shared" => parse_ngspice(text),
-        "xyce-serial" | "xyce-parallel" | "xyce" => parse_xyce(text),
         "ltspice" => parse_ltspice(text),
         _ => {
             // Try all parsers, return whichever finds results
             let results = parse_ngspice(text);
-            if !results.is_empty() {
-                return results;
-            }
-            let results = parse_xyce(text);
             if !results.is_empty() {
                 return results;
             }
@@ -124,45 +114,6 @@ fn push_measure(results: &mut Vec<MeasureResult>, result: MeasureResult) {
     }
 }
 
-/// Parse Xyce stdout for .meas results.
-///
-/// Format: `.MEASURE TRAN name = value` or `.MEASURE DC name = value`
-fn parse_xyce(text: &str) -> Vec<MeasureResult> {
-    let mut results = Vec::new();
-
-    for line in text.lines() {
-        let trimmed = line.trim();
-        let upper = trimmed.to_uppercase();
-
-        if !upper.starts_with(".MEASURE") {
-            continue;
-        }
-
-        // .MEASURE <analysis_type> <name> = <value>
-        // Split at '=' to get name and value
-        if let Some((before_eq, after_eq)) = trimmed.split_once('=') {
-            let value_str = after_eq.trim();
-            let first_token = value_str.split_whitespace().next().unwrap_or("");
-
-            if let Ok(value) = first_token.parse::<f64>() {
-                // Extract name: last word before '='
-                let name = before_eq.split_whitespace().last().unwrap_or("").to_string();
-                if !name.is_empty() {
-                    results.push(MeasureResult { name, value });
-                }
-            }
-        }
-    }
-
-    results
-}
-
-/// Parse LTspice log file for .meas results.
-///
-/// LTspice has several formats:
-/// - Single-line: `rise_time: 2.345e-009 ...`  (name: value ...)
-/// - Multi-line: `Measurement: rise_time` followed by `  rise_time: AVG=value`
-/// - Simple: `name: value=number FROM ...`
 fn parse_ltspice(text: &str) -> Vec<MeasureResult> {
     let mut results = Vec::new();
 
@@ -287,31 +238,6 @@ Library pages =    2.059 MB.
     }
 
     #[test]
-    fn test_parse_xyce_measures() {
-        let stdout = "\
-Xyce Release 7.6
-.MEASURE TRAN rise_time = 2.345000e-09
-.MEASURE TRAN fall_time = 1.987000e-09
-.MEASURE DC vout_max = 3.300000e+00
-";
-        let results = parse_xyce(stdout);
-        assert_eq!(results.len(), 3);
-        assert_eq!(results[0].name, "rise_time");
-        assert!((results[0].value - 2.345e-9).abs() < 1e-20);
-        assert_eq!(results[1].name, "fall_time");
-        assert!((results[1].value - 1.987e-9).abs() < 1e-20);
-        assert_eq!(results[2].name, "vout_max");
-        assert!((results[2].value - 3.3).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_parse_xyce_empty() {
-        let stdout = "Xyce Release 7.6\nSimulation complete.\n";
-        let results = parse_xyce(stdout);
-        assert!(results.is_empty());
-    }
-
-    #[test]
     fn test_parse_ltspice_simple() {
         let log = "\
 Circuit: test
@@ -356,19 +282,15 @@ Measurement: avg_vout
 
     #[test]
     fn test_parse_measures_dispatches_correctly() {
-        let ngspice_out = "rise_time        =  2.345000e-09\n";
-        let xyce_out = ".MEASURE TRAN rise_time = 2.345000e-09\n";
+        let ngspice_out = "  Measurements for Transient Analysis\n\nrise_time        =  2.345000e-09\n";
         let ltspice_out = "rise_time: 2.345e-009\n";
 
         let r1 = parse_measures(ngspice_out, "ngspice");
-        let r2 = parse_measures(xyce_out, "xyce");
         let r3 = parse_measures(ltspice_out, "ltspice");
 
         assert_eq!(r1.len(), 1);
-        assert_eq!(r2.len(), 1);
         assert_eq!(r3.len(), 1);
         assert_eq!(r1[0].name, "rise_time");
-        assert_eq!(r2[0].name, "rise_time");
         assert_eq!(r3[0].name, "rise_time");
     }
 
@@ -380,17 +302,4 @@ Measurement: avg_vout
         assert!((results[0].value - 5.6789e6).abs() < 1.0);
     }
 
-    #[test]
-    fn test_parse_xyce_different_analysis_types() {
-        let stdout = "\
-.MEASURE TRAN delay = 1.5e-09
-.MEASURE AC bw_3db = 1.0e+07
-.MEASURE DC vth = 0.45
-";
-        let results = parse_xyce(stdout);
-        assert_eq!(results.len(), 3);
-        assert_eq!(results[0].name, "delay");
-        assert_eq!(results[1].name, "bw_3db");
-        assert_eq!(results[2].name, "vth");
-    }
 }

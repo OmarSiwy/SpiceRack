@@ -1,11 +1,10 @@
 use crate::circuit::format_spice_number;
 use crate::ir::*;
-use super::{CodeGen, CodeGenError};
+use super::{laplace, CodeGen, CodeGenError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Spice3Dialect {
     Ngspice,
-    Xyce,
     Ltspice,
 }
 
@@ -61,6 +60,65 @@ impl Spice3CodeGen {
         s
     }
 
+    /// A `Laplace(...)` behavioural source, rewritten into something the
+    /// dialect actually parses.
+    ///
+    /// The verbatim `B1 out 0 V=Laplace(v(in), 1/(1+s*1.59e-4))` this replaces
+    /// is not syntax any supported simulator has: ngspice 44.2 answers it with
+    /// `Undefined parameter [s]` and `exit(1)`. See `codegen::laplace` for the
+    /// evidence behind both replacements.
+    ///
+    /// * ngspice: the XSPICE `s_xfer` code model, two lines (instance +
+    ///   `.model`). Verified numerically.
+    /// * LTspice: `Laplace=` on an E/G source. **Unverified** — LTspice cannot
+    ///   be run here. The expression is still parsed first, so what goes out is
+    ///   a transfer function we understand rather than an opaque string.
+    fn emit_laplace(
+        &self,
+        name: &str,
+        np: &str,
+        nm: &str,
+        expression: &str,
+        current_output: bool,
+    ) -> Result<String, CodeGenError> {
+        let parsed = laplace::parse(expression).map_err(|why| CodeGenError::Other(format!(
+            "B{name}: {why}"
+        )))?;
+        let (ip, im) = parsed.input().clone();
+        let letter = if current_output { 'G' } else { 'E' };
+
+        // A constant H(s) is a plain controlled source in every dialect. It is
+        // also the only safe option on ngspice: `den_coeff=[1]` segfaults
+        // ngspice 44.2 outright.
+        if let laplace::Laplace::Gain { gain, .. } = parsed {
+            return Ok(format!(
+                "{letter}B{name} {np} {nm} {ip} {im} {}",
+                crate::circuit::format_spice_number(gain)
+            ));
+        }
+        let laplace::Laplace::Xfer { num, den, .. } = parsed else { unreachable!() };
+
+        match self.dialect {
+            Spice3Dialect::Ngspice => {
+                let port = if current_output { "id" } else { "vd" };
+                // One integrator stage per denominator order; `int_ic=[]` is
+                // rejected with "Array parameter must have at least one value".
+                let ic = vec!["0"; den.len() - 1].join(" ");
+                Ok(format!(
+                    "AB{name} %vd({ip} {im}) %{port}({np} {nm}) B{name}_xfer\n\
+                     .model B{name}_xfer s_xfer(num_coeff=[{}] den_coeff=[{}] int_ic=[{ic}])",
+                    laplace::coeff_array(&num),
+                    laplace::coeff_array(&den),
+                ))
+            }
+            Spice3Dialect::Ltspice => Ok(format!(
+                "{letter}B{name} {np} {nm} {ip} {im} Laplace={}/{}",
+                laplace::horner(&num),
+                laplace::horner(&den),
+            )),
+        }
+    }
+
     fn emit_model(&self, m: &ModelDef) -> String {
         let mut s = format!(".model {} {}", m.name, m.kind);
         if !m.parameters.is_empty() {
@@ -86,32 +144,12 @@ impl Spice3CodeGen {
         s
     }
 
+    /// ngspice and LTspice share the SPICE3 option spelling; only the
+    /// iteration-limit alias needs mapping, and both call it `ITL1`.
     fn map_option_name(&self, canonical: &str) -> String {
-        match self.dialect {
-            Spice3Dialect::Ngspice => match canonical {
-                "reltol" => "reltol".into(),
-                "abstol" => "abstol".into(),
-                "vntol" => "vntol".into(),
-                "gmin" => "gmin".into(),
-                "max_iterations" => "ITL1".into(),
-                other => other.into(),
-            },
-            Spice3Dialect::Xyce => match canonical {
-                "reltol" => "RELTOL".into(),
-                "abstol" => "ABSTOL".into(),
-                "vntol" => "VNTOL".into(),
-                "gmin" => "gmin".into(),
-                "max_iterations" => "NONLIN-MAXSTEP".into(),
-                other => other.into(),
-            },
-            Spice3Dialect::Ltspice => match canonical {
-                "reltol" => "reltol".into(),
-                "abstol" => "abstol".into(),
-                "vntol" => "vntol".into(),
-                "gmin" => "gmin".into(),
-                "max_iterations" => "ITL1".into(),
-                other => other.into(),
-            },
+        match canonical {
+            "max_iterations" => "ITL1".into(),
+            other => other.into(),
         }
     }
 
@@ -141,19 +179,30 @@ impl Spice3CodeGen {
         Ok(lines.join("\n"))
     }
 
-    fn emit_step_param(&self, sp: &StepParam) -> String {
+    /// `.step` sweeps.
+    ///
+    /// ngspice has no `.step` at all — it aborts the run with
+    /// "unimplemented dot command '.step'" (verified on 44.2). Emitting it
+    /// commented out is worse than failing: the sweep silently collapses to a
+    /// single run and the caller gets one curve where they asked for N. So this
+    /// is a hard error naming the two things that do work.
+    pub fn emit_step_param(&self, sp: &StepParam) -> Result<String, CodeGenError> {
         match self.dialect {
-            Spice3Dialect::Ngspice => {
-                // ngspice doesn't have native .step; omit for now (would need .control block)
-                format!("* .step param {} {} {} {}", sp.param, sp.start, sp.stop, sp.step)
-            }
-            Spice3Dialect::Xyce | Spice3Dialect::Ltspice => {
-                if let Some(ref sweep) = sp.sweep_type {
-                    format!(".step {} {} {} {} {}", sweep, sp.param, sp.start, sp.stop, sp.step)
-                } else {
-                    format!(".step param {} {} {} {}", sp.param, sp.start, sp.stop, sp.step)
-                }
-            }
+            Spice3Dialect::Ngspice => Err(CodeGenError::Other(format!(
+                "ngspice has no `.step` (stepping '{}' would silently run once). \
+                 Use `.dc {} {} {} {}` for a temperature or source sweep, \
+                 or drive the sweep from Python by re-running the testbench per value.",
+                sp.param, sp.param, sp.start, sp.stop, sp.step,
+            ))),
+            // LTspice: `.step [lin|oct|dec] param <name> <start> <stop> <inc>`.
+            // The `param` keyword is mandatory in both forms.
+            Spice3Dialect::Ltspice => Ok(match sp.sweep_type {
+                Some(ref sweep) => format!(
+                    ".step {} param {} {} {} {}",
+                    sweep, sp.param, sp.start, sp.stop, sp.step
+                ),
+                None => format!(".step param {} {} {} {}", sp.param, sp.start, sp.stop, sp.step),
+            }),
         }
     }
 
@@ -170,7 +219,6 @@ impl CodeGen for Spice3CodeGen {
     fn backend_name(&self) -> &str {
         match self.dialect {
             Spice3Dialect::Ngspice => "ngspice",
-            Spice3Dialect::Xyce => "xyce",
             Spice3Dialect::Ltspice => "ltspice",
         }
     }
@@ -280,26 +328,25 @@ impl CodeGen for Spice3CodeGen {
                 lines.push(format!(".nodeset V({})={}", node, val));
             }
 
-            // Saves — Xyce uses .PRINT, ngspice/LTspice use .save
+            // Saves.
             //
             // A noise run produces `onoise_spectrum`/`inoise_spectrum`, not node
             // voltages, so a node-name save list can never name them. ngspice then
             // reports "no data saved for Noise analysis; analysis not run" and the
-            // run fails outright. Saving everything is the only correct list here.
+            // run fails outright. Saving everything is the only correct list here;
+            // LTspice has no `.save all` and saves everything by default, so it
+            // just gets no save list.
             let has_noise = tb
                 .analyses
                 .iter()
                 .any(|a| matches!(a, Analysis::Noise { .. }));
             if has_noise {
-                if self.dialect != Spice3Dialect::Xyce {
+                if self.dialect == Spice3Dialect::Ngspice {
                     lines.push(".save all".to_string());
                 }
             } else {
                 for save in &tb.saves {
-                    match self.dialect {
-                        Spice3Dialect::Xyce => lines.push(format!(".PRINT DC {}", save)),
-                        _ => lines.push(format!(".save {}", save)),
-                    }
+                    lines.push(format!(".save {}", save));
                 }
             }
 
@@ -310,7 +357,7 @@ impl CodeGen for Spice3CodeGen {
 
             // Step params
             for sp in &tb.step_params {
-                lines.push(self.emit_step_param(sp));
+                lines.push(self.emit_step_param(sp)?);
             }
 
             // Extra lines
@@ -397,9 +444,15 @@ impl CodeGen for Spice3CodeGen {
                 s
             }
             Component::BehavioralVoltage { name, np, nm, expression } => {
+                if laplace::is_laplace(expression) {
+                    return self.emit_laplace(name, np, nm, expression, false);
+                }
                 format!("B{} {} {} V={}", name, np, nm, expression)
             }
             Component::BehavioralCurrent { name, np, nm, expression } => {
+                if laplace::is_laplace(expression) {
+                    return self.emit_laplace(name, np, nm, expression, true);
+                }
                 format!("B{} {} {} I={}", name, np, nm, expression)
             }
             Component::Vcvs { name, np, nm, ncp, ncm, gain } => {
@@ -458,8 +511,8 @@ impl CodeGen for Spice3CodeGen {
                         s.push_str(&format!(" {}", model));
                         s
                     }
-                    _ => {
-                        // XSPICE not supported on Xyce/LTspice -- emit as comment
+                    Spice3Dialect::Ltspice => {
+                        // LTspice has no XSPICE A-elements -- emit as comment
                         let mut s = format!("* XSPICE (unsupported): A{}", name);
                         for conn in connections {
                             s.push_str(&format!(" {}", conn));
@@ -537,7 +590,9 @@ impl CodeGen for Spice3CodeGen {
                     format_spice_number(*start),
                     format_spice_number(*stop),
                 );
-                if let Some(pps) = points_per_summary {
+                // `pts_per_summary` is an ngspice/SPICE3 extension; LTspice's
+                // `.noise` card stops at the stop frequency.
+                if let (Some(pps), Spice3Dialect::Ngspice) = (points_per_summary, self.dialect) {
                     s.push_str(&format!(" {}", pps));
                 }
                 s
@@ -546,6 +601,13 @@ impl CodeGen for Spice3CodeGen {
                 format!(".tf {} {}", output, source)
             }
             Analysis::Sensitivity { output, ac } => {
+                // LTspice has no `.sens` card.
+                if self.dialect != Spice3Dialect::Ngspice {
+                    return Err(CodeGenError::UnsupportedAnalysis {
+                        backend: self.backend_name().into(),
+                        analysis: "Sensitivity".into(),
+                    });
+                }
                 let mut s = format!(".sens {}", output);
                 if let Some(ac_params) = ac {
                     s.push_str(&format!(
@@ -587,8 +649,13 @@ impl CodeGen for Spice3CodeGen {
                 s
             }
             Analysis::Fourier { fundamental, outputs, num_harmonics } => {
+                // SPICE3/ngspice: `.four <freq> <ov1> [ov2 ...]` — there is no
+                // harmonic-count field. Emitting one makes ngspice warn
+                // "can't parse '10': ignored" and then fail the analysis with
+                // "lengths don't match" because it treats the count as an output
+                // vector. LTspice's card *does* take `[Nharmonics]`.
                 let mut s = format!(".four {}", format_spice_number(*fundamental));
-                if let Some(nh) = num_harmonics {
+                if let (Some(nh), Spice3Dialect::Ltspice) = (num_harmonics, self.dialect) {
                     s.push_str(&format!(" {}", nh));
                 }
                 for out in outputs {
@@ -596,70 +663,7 @@ impl CodeGen for Spice3CodeGen {
                 }
                 s
             }
-            // Vendor-specific: Xyce analyses
-            Analysis::XyceSampling { num_samples, distributions } => {
-                match self.dialect {
-                    Spice3Dialect::Xyce => {
-                        let mut s = format!(".SAMPLING\n+ param = {}", num_samples);
-                        for (param, dist) in distributions {
-                            s.push_str(&format!("\n+ {}={}", param, dist));
-                        }
-                        s
-                    }
-                    _ => return Err(CodeGenError::UnsupportedAnalysis {
-                        backend: self.backend_name().into(),
-                        analysis: "XyceSampling".into(),
-                    }),
-                }
-            }
-            Analysis::XyceEmbeddedSampling { num_samples, distributions } => {
-                match self.dialect {
-                    Spice3Dialect::Xyce => {
-                        let mut s = format!(".EMBEDDEDSAMPLING\n+ param = {}", num_samples);
-                        for (param, dist) in distributions {
-                            s.push_str(&format!("\n+ {}={}", param, dist));
-                        }
-                        s
-                    }
-                    _ => return Err(CodeGenError::UnsupportedAnalysis {
-                        backend: self.backend_name().into(),
-                        analysis: "XyceEmbeddedSampling".into(),
-                    }),
-                }
-            }
-            Analysis::XycePce { num_samples, distributions, order } => {
-                match self.dialect {
-                    Spice3Dialect::Xyce => {
-                        let mut s = format!(".PCE\n+ param = {}\n+ order = {}", num_samples, order);
-                        for (param, dist) in distributions {
-                            s.push_str(&format!("\n+ {}={}", param, dist));
-                        }
-                        s
-                    }
-                    _ => return Err(CodeGenError::UnsupportedAnalysis {
-                        backend: self.backend_name().into(),
-                        analysis: "XycePce".into(),
-                    }),
-                }
-            }
-            Analysis::XyceFft { signal, np, start, stop, window, format: fmt } => {
-                match self.dialect {
-                    Spice3Dialect::Xyce => {
-                        format!(
-                            ".FFT {} NP={} START={} STOP={} WINDOW={} FORMAT={}",
-                            signal, np,
-                            format_spice_number(*start),
-                            format_spice_number(*stop),
-                            window, fmt,
-                        )
-                    }
-                    _ => return Err(CodeGenError::UnsupportedAnalysis {
-                        backend: self.backend_name().into(),
-                        analysis: "XyceFft".into(),
-                    }),
-                }
-            }
-            // Spectre-only analyses are not emittable in SPICE3
+            // Spectre- and VACASK-only analyses are not emittable in SPICE3
             Analysis::Pss { .. }
             | Analysis::HarmonicBalance { .. }
             | Analysis::SPar { .. }
@@ -782,16 +786,16 @@ mod tests {
     }
 
     #[test]
-    fn test_xyce_resistor_divider() {
+    fn test_ltspice_resistor_divider() {
         let ir = sample_resistor_divider();
-        let cg = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
+        let cg = Spice3CodeGen { dialect: Spice3Dialect::Ltspice };
         let netlist = cg.emit_netlist(&ir).unwrap();
         assert!(netlist.contains("* Voltage Divider"));
         assert!(netlist.contains("Vin input 0 10"));
         assert!(netlist.contains(".op"));
         assert!(netlist.contains(".end"));
-        // Xyce should NOT have .pre_osdi
-        assert!(!netlist.contains(".pre_osdi"));
+        // LTspice has no OSDI loader
+        assert!(!netlist.contains("pre_osdi"));
     }
 
     #[test]
@@ -1104,12 +1108,18 @@ mod tests {
             outputs: vec!["V(out)".into()],
             num_harmonics: Some(10),
         };
+        // ngspice's `.four` card has no harmonic-count field: a count there is
+        // read as an output vector and kills the analysis.
         let four_str = cg.emit_analysis(&four).unwrap();
-        assert!(four_str.contains(".four 1k 10 V(out)"), "four: {}", four_str);
+        assert_eq!(four_str, ".four 1k V(out)", "four: {}", four_str);
+
+        // LTspice's card does take `[Nharmonics]`.
+        let cg_lt = Spice3CodeGen { dialect: Spice3Dialect::Ltspice };
+        assert_eq!(cg_lt.emit_analysis(&four).unwrap(), ".four 1k 10 V(out)");
     }
 
     #[test]
-    fn test_options_ngspice_vs_xyce() {
+    fn test_options_max_iterations_maps_to_itl1() {
         let opts = SimOptions {
             portable: vec![
                 ("reltol".into(), "1e-3".into()),
@@ -1124,11 +1134,11 @@ mod tests {
         assert!(ng_str.contains("reltol=1e-3"), "ng reltol: {}", ng_str);
         assert!(ng_str.contains("ITL1=200"), "ng ITL1: {}", ng_str);
 
-        // Xyce
-        let cg_xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
-        let xy_str = cg_xy.emit_options(&opts).unwrap();
-        assert!(xy_str.contains("RELTOL=1e-3"), "xy RELTOL: {}", xy_str);
-        assert!(xy_str.contains("NONLIN-MAXSTEP=200"), "xy NONLIN-MAXSTEP: {}", xy_str);
+        // LTspice uses the same SPICE3 spellings
+        let cg_lt = Spice3CodeGen { dialect: Spice3Dialect::Ltspice };
+        let lt_str = cg_lt.emit_options(&opts).unwrap();
+        assert!(lt_str.contains("reltol=1e-3"), "lt reltol: {}", lt_str);
+        assert!(lt_str.contains("ITL1=200"), "lt ITL1: {}", lt_str);
     }
 
     #[test]
@@ -1175,10 +1185,10 @@ mod tests {
             "ng osdi control block: {}", ng_str);
         assert!(!ng_str.contains(".pre_osdi"), "no dot-command form: {}", ng_str);
 
-        // Xyce does not
-        let cg_xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
-        let xy_str = cg_xy.emit_netlist(&ir).unwrap();
-        assert!(!xy_str.contains("pre_osdi"), "xy should not have osdi: {}", xy_str);
+        // LTspice does not
+        let cg_lt = Spice3CodeGen { dialect: Spice3Dialect::Ltspice };
+        let lt_str = cg_lt.emit_netlist(&ir).unwrap();
+        assert!(!lt_str.contains("pre_osdi"), "lt should not have osdi: {}", lt_str);
     }
 
     #[test]
@@ -1194,13 +1204,13 @@ mod tests {
         assert!(ng_str.starts_with("A1 "), "ng xspice: {}", ng_str);
         assert!(ng_str.contains("d_and"), "ng xspice model: {}", ng_str);
 
-        let cg_xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
-        let xy_str = cg_xy.emit_component(&comp).unwrap();
-        assert!(xy_str.starts_with("* XSPICE"), "xy xspice should be comment: {}", xy_str);
+        let cg_lt = Spice3CodeGen { dialect: Spice3Dialect::Ltspice };
+        let lt_str = cg_lt.emit_component(&comp).unwrap();
+        assert!(lt_str.starts_with("* XSPICE"), "lt xspice should be comment: {}", lt_str);
     }
 
     #[test]
-    fn test_step_params_xyce() {
+    fn test_step_params_ltspice_ok_ngspice_errors() {
         let ir = CircuitIR {
             top: Subcircuit {
                 name: "Step Test".into(),
@@ -1247,10 +1257,30 @@ mod tests {
             model_libraries: vec![],
         };
 
-        // Xyce emits native .step
-        let cg = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
+        // LTspice emits a native .step
+        let cg = Spice3CodeGen { dialect: Spice3Dialect::Ltspice };
         let netlist = cg.emit_netlist(&ir).unwrap();
         assert!(netlist.contains(".step param rval 1000 10000 1000"), "step: {}", netlist);
+
+        // ngspice has no .step — it must fail loudly rather than run once.
+        let ng = Spice3CodeGen { dialect: Spice3Dialect::Ngspice };
+        let err = ng.emit_netlist(&ir).unwrap_err();
+        assert!(err.to_string().contains("no `.step`"), "err: {}", err);
+    }
+
+    #[test]
+    fn test_step_params_ltspice_sweep_type_keeps_param_keyword() {
+        // LTspice: `.step dec param x 1 10 10` — the `param` keyword is required
+        // in the lin/oct/dec form too.
+        let cg = Spice3CodeGen { dialect: Spice3Dialect::Ltspice };
+        let sp = StepParam {
+            param: "rval".into(),
+            start: 1000.0,
+            stop: 10000.0,
+            step: 10.0,
+            sweep_type: Some("dec".into()),
+        };
+        assert_eq!(cg.emit_step_param(&sp).unwrap(), ".step dec param rval 1000 10000 10");
     }
 
     #[test]
@@ -1328,11 +1358,11 @@ mod tests {
             "ngspice path: {}", ng_netlist);
         assert!(!ng_netlist.contains("spectre"), "no spectre path in ngspice: {}", ng_netlist);
 
-        // Xyce falls back to default path (no xyce key)
-        let xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
-        let xy_netlist = xy.emit_netlist(&ir).unwrap();
-        assert!(xy_netlist.contains(".lib /pdk/default/sky130.lib tt"),
-            "xyce fallback: {}", xy_netlist);
+        // LTspice falls back to the default path (no ltspice key)
+        let lt = Spice3CodeGen { dialect: Spice3Dialect::Ltspice };
+        let lt_netlist = lt.emit_netlist(&ir).unwrap();
+        assert!(lt_netlist.contains(".lib /pdk/default/sky130.lib tt"),
+            "ltspice fallback: {}", lt_netlist);
     }
 
     #[test]
@@ -1397,38 +1427,6 @@ mod tests {
     // ── Issue 05: Dialect correctness ──
 
     #[test]
-    fn test_xyce_uses_print_not_save() {
-        let ir = CircuitIR {
-            top: Subcircuit {
-                name: "xyce_print".into(),
-                ports: vec![], parameters: vec![],
-                components: vec![Component::Resistor {
-                    name: "1".into(), n1: "a".into(), n2: "0".into(),
-                    value: IrValue::Numeric { value: 1000.0 }, params: vec![],
-                }],
-                instances: vec![], models: vec![], raw_spice: vec![],
-                includes: vec![], libs: vec![], osdi_loads: vec![],
-                verilog_blocks: vec![],
-            },
-            testbench: Some(Testbench {
-                dut: "xyce_print".into(), stimulus: vec![],
-                analyses: vec![Analysis::Op],
-                options: SimOptions::default(),
-                saves: vec!["V(a)".into()],
-                measures: vec![], temperature: None, nominal_temperature: None,
-                initial_conditions: vec![], node_sets: vec![],
-                step_params: vec![], extra_lines: vec![],
-            }),
-            subcircuit_defs: vec![], model_libraries: vec![],
-        };
-
-        let xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
-        let netlist = xy.emit_netlist(&ir).unwrap();
-        assert!(netlist.contains(".PRINT"), "xyce needs .PRINT: {}", netlist);
-        assert!(!netlist.contains(".save"), "xyce must not use .save: {}", netlist);
-    }
-
-    #[test]
     fn test_ngspice_uses_save() {
         let ir = CircuitIR {
             top: Subcircuit {
@@ -1456,20 +1454,23 @@ mod tests {
     }
 
     #[test]
-    fn test_pz_disto_error_on_xyce() {
-        let cg_xy = Spice3CodeGen { dialect: Spice3Dialect::Xyce };
+    fn test_pz_disto_sens_error_on_ltspice() {
+        let cg_xy = Spice3CodeGen { dialect: Spice3Dialect::Ltspice };
         let pz = Analysis::PoleZero {
             node1: "1".into(), node2: "0".into(),
             node3: "3".into(), node4: "0".into(),
             tf_type: "vol".into(), pz_type: "pz".into(),
         };
-        assert!(cg_xy.emit_analysis(&pz).is_err(), "pz should error on xyce");
+        assert!(cg_xy.emit_analysis(&pz).is_err(), "pz should error on ltspice");
 
         let disto = Analysis::Distortion {
             variation: "dec".into(), points: 10,
             start: 1e3, stop: 1e6, f2overf1: None,
         };
-        assert!(cg_xy.emit_analysis(&disto).is_err(), "disto should error on xyce");
+        assert!(cg_xy.emit_analysis(&disto).is_err(), "disto should error on ltspice");
+
+        let sens = Analysis::Sensitivity { output: "V(out)".into(), ac: None };
+        assert!(cg_xy.emit_analysis(&sens).is_err(), "sens should error on ltspice");
     }
 
     #[test]

@@ -16,16 +16,25 @@ pub struct LtspiceSubprocess {
 }
 
 impl LtspiceSubprocess {
-    /// Inject options to normalize raw file output (disable compression, force f64)
+    /// Inject options to normalize raw file output.
+    ///
+    /// `plotwinsize=0` disables LTspice's waveform compression (otherwise the
+    /// raw file is lossily decimated) and `numdgt>6` switches it to double
+    /// precision. Both must land after the title, since LTspice — like every
+    /// SPICE — treats line 1 as a comment.
+    ///
+    /// UNVERIFIED: no LTspice binary is installed on this machine, so every
+    /// claim in this file comes from LTspice's documented syntax, not from a
+    /// run.
     fn normalize_netlist(netlist: &str) -> String {
         let mut result = String::with_capacity(netlist.len() + 100);
 
         // Find the position after the title line to insert options
         let mut lines = netlist.lines();
-        if let Some(title) = lines.next() {
-            result.push_str(title);
-            result.push('\n');
-        }
+        // An empty deck has no title line; synthesize one, or the first option
+        // we add would be swallowed as the title.
+        result.push_str(lines.next().unwrap_or("* spicerack"));
+        result.push('\n');
 
         // Inject normalization options right after title
         result.push_str(".options plotwinsize=0\n");
@@ -71,49 +80,59 @@ impl Backend for LtspiceSubprocess {
         cir_file.flush()?;
 
         let cir_path = cir_file.path();
+        // `-b` writes <base>.raw and <base>.log beside the input netlist.
         let raw_path = cir_path.with_extension("raw");
+        let log_path = cir_path.with_extension("log");
 
-        let output = if self.use_wine {
-            let mut cmd = Command::new("wine");
-            cmd.arg(&self.executable)
-                .arg("-b")
-                .arg("-wine");
-            if self.fast_access {
-                cmd.arg("-FastAccess");
-            }
-            cmd.arg(cir_path).output()?
+        // `-b` is the documented headless switch for a *netlist* input.
+        // (`-Run` only matters for `.asc` schematics, which this backend never
+        // feeds it.) `-FastAccess` rewrites the raw file column-major, which
+        // `rawfile::parse_raw` detects from the `fastaccess` flag.
+        let mut cmd = if self.use_wine {
+            let mut c = Command::new("wine");
+            c.arg(&self.executable);
+            // UNVERIFIED: `-wine` is an LTspice XVII switch for running the
+            // Windows build under Wine. No LTspice binary here to confirm it.
+            c.arg("-wine");
+            c
         } else {
-            let mut cmd = Command::new(&self.executable);
-            cmd.arg("-b");
-            if self.fast_access {
-                cmd.arg("-FastAccess");
-            }
-            cmd.arg(cir_path).output()?
+            Command::new(&self.executable)
         };
+        cmd.arg("-b");
+        if self.fast_access {
+            cmd.arg("-FastAccess");
+        }
+        let output = cmd.arg(cir_path).output()?;
+
+        // LTspice reports simulation errors in the .log file, not on stderr, so
+        // the log has to be in the error message or failures are unreadable.
+        let log_content = std::fs::read_to_string(&log_path).unwrap_or_default();
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
+            // The interesting part of an LTspice log is its tail.
+            let skip = log_content.chars().count().saturating_sub(1000);
+            let log_tail: String = log_content.chars().skip(skip).collect();
+            let _ = std::fs::remove_file(&raw_path);
+            let _ = std::fs::remove_file(&log_path);
             return Err(BackendError::SimulationError(format!(
-                "LTspice exited with status {}\nstdout: {}\nstderr: {}",
+                "LTspice exited with status {}\nstdout: {}\nstderr: {}\nlog: {}",
                 output.status,
                 stdout.chars().take(500).collect::<String>(),
                 stderr.chars().take(500).collect::<String>(),
+                log_tail,
             )));
         }
 
         // Capture stdout
         let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
 
-        // LTspice puts .meas results in the .log file -- read before cleanup
-        let log_path = cir_path.with_extension("log");
-        let log_content = std::fs::read_to_string(&log_path).unwrap_or_default();
-
-        // LTspice puts the raw file next to the input with .raw extension
         let raw_bytes = std::fs::read(&raw_path).map_err(|e| {
+            let _ = std::fs::remove_file(&log_path);
             BackendError::SimulationError(format!(
-                "Failed to read raw file '{}': {}",
-                raw_path.display(), e
+                "Failed to read raw file '{}': {}\nlog: {}",
+                raw_path.display(), e, log_content,
             ))
         })?;
 

@@ -163,44 +163,6 @@ def test_evaluate_metric_sets_summarizes_yield_and_stats():
     assert summary.metric_stats("gain_db").mean == pytest.approx((40.0 + 39.7 + 36.0) / 3)
 
 
-def test_parse_metric_rows_accepts_csv_and_whitespace_tables(tmp_path):
-    csv_rows = parse_metric_rows("run,gain_db,vref\n0,40.0,1.205\n1,37.5,1.260\n")
-    assert csv_rows == [
-        {"run": 0.0, "gain_db": 40.0, "vref": 1.205},
-        {"run": 1.0, "gain_db": 37.5, "vref": 1.260},
-    ]
-
-    table = tmp_path / "xyce_measure.mt0"
-    table.write_text("INDEX gain_db vref\n0 40.0 1.205\n1 39.5 1.215\n")
-    loaded = load_metric_rows(table, backend="xyce")
-    assert loaded[1]["gain_db"] == 39.5
-
-
-def test_parse_metric_rows_accepts_repeated_measure_logs():
-    text = """
-Xyce Release
-.MEASURE TRAN gain_db = 40.0
-.MEASURE TRAN vref = 1.205
-.MEASURE TRAN gain_db = 37.0
-.MEASURE TRAN vref = 1.260
-"""
-    rows = parse_metric_rows(text, backend="xyce")
-    assert rows == [
-        {"gain_db": 40.0, "vref": 1.205},
-        {"gain_db": 37.0, "vref": 1.260},
-    ]
-
-    summary = evaluate_result_text(
-        text,
-        [
-            ValidationRule("gain", "gain_db", minimum=38.0),
-            ValidationRule("reference", "vref", minimum=1.18, maximum=1.23),
-        ],
-        backend="xyce",
-    )
-    assert summary.pass_rate == pytest.approx(0.5)
-
-
 def test_evaluate_result_file_validates_backend_metric_table(tmp_path):
     output = tmp_path / "spectre_mc.csv"
     output.write_text("iteration,gain_db,vref\n1,40.0,1.205\n2,39.0,1.210\n3,36.0,1.300\n")
@@ -217,30 +179,6 @@ def test_evaluate_result_file_validates_backend_metric_table(tmp_path):
     assert summary.total == 3
     assert summary.passed == 2
     assert summary.failures[0].metrics["iteration"] == 3.0
-
-
-def test_monte_carlo_directory_loader_finds_backend_metric_files(tmp_path):
-    output_dir = tmp_path / "xyce_run"
-    output_dir.mkdir()
-    (output_dir / "ignored.raw").write_text("not scalar metrics")
-    (output_dir / "sampling.mt0").write_text("INDEX gain_db vref\n0 40.0 1.205\n1 37.0 1.260\n")
-
-    files = find_metric_files(output_dir, backend="xyce")
-    assert files == [output_dir / "sampling.mt0"]
-
-    rows = load_monte_carlo_metrics(output_dir, backend="xyce")
-    assert len(rows) == 2
-    assert rows[0]["gain_db"] == 40.0
-
-    summary = evaluate_monte_carlo_file(
-        output_dir,
-        [
-            ValidationRule("gain", "gain_db", minimum=38.0),
-            ValidationRule("reference", "vref", minimum=1.18, maximum=1.23),
-        ],
-        backend="xyce",
-    )
-    assert summary.pass_rate == pytest.approx(0.5)
 
 
 def test_spectre_monte_carlo_fixture_finds_scalar_mcdata_without_waveforms():
@@ -342,28 +280,3 @@ def test_evaluate_corners_connects_corner_setup_to_validation():
     assert summary.pass_rate == pytest.approx(0.5)
     assert summary.failures[0].name == "ss_hot"
 
-
-def test_monte_carlo_plan_emits_xyce_and_spectre_netlists():
-    mod = ps()
-    xyce_bench = amplifier_voltage_gain(mod, dut("mc_xyce", ["vin", "vout"]))
-    xyce = monte_carlo_netlist(
-        xyce_bench,
-        MonteCarloPlan(samples=12, distributions={"Rload": "normal(1000,50)"}),
-    )
-    assert ".SAMPLING" in xyce
-    assert "+ param = 12" in xyce
-    assert "+ Rload=normal(1000,50)" in xyce
-
-    spectre_bench = amplifier_voltage_gain(mod, dut("mc_spectre", ["vin", "vout"]))
-    spectre = monte_carlo_netlist(
-        spectre_bench,
-        MonteCarloPlan(
-            backend="spectre",
-            samples=8,
-            spectre_inner="tran1",
-            spectre_inner_type="tran",
-            seed=42,
-        ),
-    )
-    assert "mc1 montecarlo numruns=8" in spectre
-    assert "seed=42" in spectre

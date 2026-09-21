@@ -1,5 +1,4 @@
 pub mod ngspice;
-pub mod xyce;
 pub mod ltspice;
 pub mod vacask;
 pub mod spectre;
@@ -64,8 +63,6 @@ pub trait Backend: Send + Sync {
 pub enum BackendKind {
     NgspiceSubprocess,
     NgspiceShared,
-    XyceSerial,
-    XyceParallel,
     Ltspice {
         executable: std::path::PathBuf,
         use_wine: bool,
@@ -81,8 +78,6 @@ impl BackendKind {
         match s {
             "ngspice-subprocess" | "ngspice" => Some(Self::NgspiceSubprocess),
             "ngspice-shared" => Some(Self::NgspiceShared),
-            "xyce-serial" | "xyce" => Some(Self::XyceSerial),
-            "xyce-parallel" => Some(Self::XyceParallel),
             "ltspice" => Some(Self::Ltspice {
                 executable: std::path::PathBuf::from("ltspice"),
                 use_wine: false,
@@ -98,8 +93,6 @@ impl BackendKind {
         match self {
             Self::NgspiceSubprocess => "ngspice",
             Self::NgspiceShared => "ngspice-shared",
-            Self::XyceSerial => "xyce",
-            Self::XyceParallel => "xyce-parallel",
             Self::Ltspice { .. } => "ltspice",
             Self::Vacask => "vacask",
             Self::VacaskShared => "vacask-shared",
@@ -110,15 +103,6 @@ impl BackendKind {
     pub fn capabilities(&self) -> BackendCapabilities {
         match self {
             Self::NgspiceSubprocess | Self::NgspiceShared => ngspice::NGSPICE_CAPS,
-            Self::XyceSerial | Self::XyceParallel => BackendCapabilities {
-                xspice: false,
-                osdi: false,
-                measures: true,
-                step_params: true,
-                control_blocks: false,
-                laplace_sources: false,
-                verilog_cosim: false,
-            },
             Self::Ltspice { .. } => BackendCapabilities {
                 xspice: false,
                 osdi: false,
@@ -132,7 +116,7 @@ impl BackendKind {
             Self::Spectre => BackendCapabilities {
                 xspice: false,
                 osdi: true,
-                measures: false,
+                measures: true,
                 step_params: true,
                 control_blocks: false,
                 laplace_sources: false,
@@ -178,9 +162,9 @@ pub struct CircuitFeatures {
     pub has_xspice: bool,
     /// Circuit loads OSDI/Verilog-A compiled models
     pub has_osdi: bool,
-    /// Simulator uses .meas directives (ngspice, xyce, ltspice)
+    /// Simulator uses .meas directives (ngspice, ltspice, spectre)
     pub has_measures: bool,
-    /// Simulator uses .step param sweeps (xyce, ltspice, spectre)
+    /// Simulator uses .step param sweeps (ltspice, spectre)
     pub has_step_params: bool,
     /// Circuit contains .control blocks in raw lines (ngspice only)
     pub has_control_blocks: bool,
@@ -188,7 +172,7 @@ pub struct CircuitFeatures {
     pub has_laplace_sources: bool,
     /// Circuit uses Verilog co-simulation (ngspice d_cosim, spectre xrun)
     pub has_verilog_cosim: bool,
-    /// Total element count — used to prefer xyce-parallel for large circuits
+    /// Total element count
     pub element_count: usize,
 }
 
@@ -214,27 +198,25 @@ fn analysis_backend_preference(analysis_type: &str) -> &'static [&'static str] {
         "pz" | "disto" => &["ngspice"],
         // TF: ngspice and ltspice have native .tf, vacask has dcxf, spectre has xf
         "tf" => &["ngspice", "ltspice", "vacask", "spectre"],
-        // Harmonic Balance: xyce, vacask, spectre
-        "hb" => &["xyce", "vacask", "spectre"],
+        // Harmonic Balance: vacask, spectre
+        "hb" => &["vacask", "spectre"],
         // S-parameters
-        "sp" | "s_param" => &["xyce", "vacask", "spectre", "ngspice"],
+        "sp" | "s_param" => &["vacask", "spectre", "ngspice"],
         // Stability (loop gain)
         "stb" | "stability" => &["vacask", "spectre"],
         // PSS
         "pss" => &["spectre", "ngspice"],
         // Transient noise
         "trannoise" => &["vacask"],
-        // Xyce-only statistical
-        "sampling" | "pce" | "embedded_sampling" => &["xyce"],
-        // Xyce-only: transient/adjoint sensitivity
-        "sens_tran" | "sens_adjoint" => &["xyce"],
+        "sampling" | "pce" | "embedded_sampling" => &["spectre"],
+        "sens_tran" | "sens_adjoint" => &["spectre"],
         // AC sensitivity
-        "sens_ac" => &["ngspice", "xyce", "spectre"],
+        "sens_ac" => &["ngspice", "spectre"],
         // Spectre-only periodic analyses
         "pac" | "pnoise" | "pxf" | "pstb" | "psp" | "pdisto" |
         "hbac" | "hbnoise" | "hbsp" => &["spectre"],
         // Universal analyses — all backends
-        _ => &["ngspice", "xyce", "ltspice", "vacask", "spectre"],
+        _ => &["ngspice", "ltspice", "vacask", "spectre"],
     }
 }
 
@@ -303,8 +285,6 @@ fn create_backend_from_kind(kind: &BackendKind) -> Result<Box<dyn Backend>, Back
         BackendKind::NgspiceShared => {
             Ok(Box::new(ngspice::NgspiceShared::new()?))
         }
-        BackendKind::XyceSerial => Ok(Box::new(xyce::XyceSubprocess { parallel: false })),
-        BackendKind::XyceParallel => Ok(Box::new(xyce::XyceSubprocess { parallel: true })),
         BackendKind::Ltspice { executable, use_wine } => Ok(Box::new(ltspice::LtspiceSubprocess {
             executable: executable.clone(),
             use_wine: *use_wine,
@@ -321,9 +301,6 @@ fn create_backend_from_kind(kind: &BackendKind) -> Result<Box<dyn Backend>, Back
 fn create_backend_by_name(name: &str, analysis_type: &str) -> Result<Box<dyn Backend>, BackendError> {
     // Check for analysis compatibility with the requested backend
     let incompatible = match name {
-        "xyce" | "xyce-serial" | "xyce-parallel" => {
-            matches!(analysis_type, "pz" | "disto")
-        }
         "ltspice" => {
             matches!(analysis_type, "pz" | "disto" | "sens" | "sens_ac" | "hb" | "pss" | "stb")
         }
@@ -346,8 +323,6 @@ fn create_backend_by_name(name: &str, analysis_type: &str) -> Result<Box<dyn Bac
     match name {
         "ngspice-subprocess" | "ngspice" => Ok(Box::new(ngspice::NgspiceSubprocess)),
         "ngspice-shared" => Ok(Box::new(ngspice::NgspiceShared::new()?)),
-        "xyce-serial" | "xyce" => Ok(Box::new(xyce::XyceSubprocess { parallel: false })),
-        "xyce-parallel" => Ok(Box::new(xyce::XyceSubprocess { parallel: true })),
         "ltspice" => {
             if let Some((exe, wine)) = ltspice::detect_ltspice() {
                 Ok(Box::new(ltspice::LtspiceSubprocess { executable: exe, use_wine: wine, fast_access: false }))
@@ -440,19 +415,6 @@ mod tests {
     }
 
     #[test]
-    fn test_xyce_capabilities() {
-        let b = xyce::XyceSubprocess { parallel: false };
-        let c = b.capabilities();
-        assert!(!c.xspice);
-        assert!(!c.osdi);
-        assert!(c.measures);
-        assert!(c.step_params);
-        assert!(!c.control_blocks);
-        assert!(!c.laplace_sources);
-        assert!(!c.verilog_cosim);
-    }
-
-    #[test]
     fn test_ltspice_capabilities() {
         let b = ltspice::LtspiceSubprocess {
             executable: std::path::PathBuf::from("ltspice"),
@@ -473,10 +435,10 @@ mod tests {
     fn test_vacask_capabilities() {
         let b = vacask::VacaskSubprocess;
         let c = b.capabilities();
+        assert!(c.step_params, "VACASK has sweep/var parameter sweeps");
         assert!(!c.xspice);
         assert!(c.osdi);
-        assert!(!c.measures);
-        assert!(!c.step_params);
+        assert!(!c.measures, "VACASK has no measurement statement");
         assert!(!c.control_blocks);
         assert!(!c.laplace_sources);
         assert!(!c.verilog_cosim);
@@ -488,7 +450,8 @@ mod tests {
         let c = b.capabilities();
         assert!(!c.xspice);
         assert!(c.osdi);
-        assert!(!c.measures);
+        // Spectre supports SPICE .measure (Spectre Reference, Product Version 19.1, p.17).
+        assert!(c.measures);
         assert!(c.step_params);
         assert!(!c.control_blocks);
         assert!(!c.laplace_sources);
@@ -499,8 +462,6 @@ mod tests {
     fn test_backendkind_capabilities_match_trait() {
         let cases: Vec<(BackendKind, Box<dyn Backend>)> = vec![
             (BackendKind::NgspiceSubprocess, Box::new(ngspice::NgspiceSubprocess)),
-            (BackendKind::XyceSerial, Box::new(xyce::XyceSubprocess { parallel: false })),
-            (BackendKind::XyceParallel, Box::new(xyce::XyceSubprocess { parallel: true })),
             (BackendKind::Ltspice {
                 executable: std::path::PathBuf::from("ltspice"),
                 use_wine: false,
@@ -530,16 +491,14 @@ mod tests {
     fn test_kind_supports_features_xspice_filters_non_ngspice() {
         let f = CircuitFeatures { has_xspice: true, ..Default::default() };
         assert!(BackendKind::NgspiceSubprocess.capabilities().supports_features(&f));
-        assert!(!BackendKind::XyceSerial.capabilities().supports_features(&f));
         assert!(!BackendKind::Vacask.capabilities().supports_features(&f));
         assert!(!BackendKind::Spectre.capabilities().supports_features(&f));
     }
 
     #[test]
-    fn test_kind_supports_features_osdi_filters_xyce_ltspice() {
+    fn test_kind_supports_features_osdi_filters_ltspice() {
         let f = CircuitFeatures { has_osdi: true, ..Default::default() };
         assert!(BackendKind::NgspiceSubprocess.capabilities().supports_features(&f));
-        assert!(!BackendKind::XyceSerial.capabilities().supports_features(&f));
         assert!(BackendKind::Vacask.capabilities().supports_features(&f));
         assert!(BackendKind::Spectre.capabilities().supports_features(&f));
     }
@@ -552,9 +511,9 @@ mod tests {
             ..Default::default()
         };
         assert!(!BackendKind::NgspiceSubprocess.capabilities().supports_features(&f));
-        assert!(BackendKind::XyceSerial.capabilities().supports_features(&f));
+        // VACASK has parameter sweeps but no measurement statement.
         assert!(!BackendKind::Vacask.capabilities().supports_features(&f));
-        assert!(!BackendKind::Spectre.capabilities().supports_features(&f));
+        assert!(BackendKind::Spectre.capabilities().supports_features(&f));
     }
 
     #[test]
@@ -572,7 +531,7 @@ mod tests {
     #[test]
     fn test_analysis_backend_preference_hb() {
         let prefs = analysis_backend_preference("hb");
-        assert_eq!(prefs, &["xyce", "vacask", "spectre"]);
+        assert_eq!(prefs, &["vacask", "spectre"]);
     }
 
     #[test]
@@ -591,7 +550,6 @@ mod tests {
     fn test_analysis_backend_preference_universal_includes_all() {
         let prefs = analysis_backend_preference("tran");
         assert!(prefs.contains(&"ngspice"));
-        assert!(prefs.contains(&"xyce"));
         assert!(prefs.contains(&"ltspice"));
         assert!(prefs.contains(&"vacask"));
         assert!(prefs.contains(&"spectre"));
@@ -605,13 +563,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_analysis_backend_preference_xyce_only_analyses() {
-        for analysis in &["sampling", "pce", "embedded_sampling", "sens_tran", "sens_adjoint"] {
-            let prefs = analysis_backend_preference(analysis);
-            assert_eq!(prefs, &["xyce"], "Expected xyce-only for {}", analysis);
-        }
-    }
 
     #[test]
     fn test_circuit_features_default_all_false() {

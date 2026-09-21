@@ -99,7 +99,7 @@ def main():
         amplifier_voltage_gain(ps, make_dut("mc_amp", ["vin", "vout"])),
         MonteCarloPlan(samples=16, distributions={"Rload": "normal(1000,50)"}),
     )
-    assert ".SAMPLING" in mc_netlist
+    assert "montecarlo" in mc_netlist and "numruns=16" in mc_netlist
 
     report = validate_metrics(
         {"vref": 1.205, "gain_db": 40.0},
@@ -129,7 +129,7 @@ def main():
     parsed_summary = evaluate_result_text(
         ".MEASURE TRAN vref = 1.205\n.MEASURE TRAN vref = 1.260\n",
         [ValidationRule("reference window", "vref", minimum=1.18, maximum=1.23)],
-        backend="xyce",
+        backend="spectre",
     )
     assert parsed_summary.pass_rate == 0.5
 

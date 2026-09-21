@@ -6,7 +6,7 @@
 //!
 //! - Node voltages: strip `v()`/`V()` wrappers, lowercase
 //! - Branch currents: normalize to `i(name)` canonical format
-//! - Hierarchy separators: Xyce `%` and LTspice `:` become `.`
+//! - Hierarchy separators: `%` and LTspice `:` become `.`
 //! - Sweep variables (`time`, `frequency`) pass through as-is
 
 /// Normalize a variable name from any backend to canonical form.
@@ -16,7 +16,7 @@
 ///   `"v(out)"` -> `"out"`, `"V(OUT)"` -> `"out"`
 /// - Branch currents: normalize to `"i(name)"` canonical format
 ///   `"i(v1)"` -> `"i(v1)"`, `"I(V1)"` -> `"i(v1)"`, `"V1:p"` -> `"i(v1)"`
-/// - Hierarchy separators: Xyce `%` and LTspice `:` become `.`
+/// - Hierarchy separators: `%` and LTspice `:` become `.`
 ///   `"v(x1%internal)"` -> `"x1.internal"`, `"v(x1:internal)"` -> `"x1.internal"`
 /// - Sweep variables: `"time"`, `"frequency"` stay as-is (already lowercase)
 /// - Noise spectra: `"inoise_spectrum"`, `"onoise_spectrum"` preserved
@@ -118,15 +118,12 @@ fn normalize_current(name: &str, backend: &str) -> String {
 
 /// Normalize hierarchy separators to `.`.
 ///
-/// - Xyce uses `%` for hierarchy: `x1%internal` -> `x1.internal`
+/// - `%` hierarchy separators become `.`: `x1%internal` -> `x1.internal`
 /// - LTspice uses `:` for hierarchy: `x1:internal` -> `x1.internal`
 ///   (But in Spectre, `:` denotes terminal current, handled elsewhere)
 /// - ngspice/Spectre already use `.`: no change needed
 fn normalize_hierarchy(name: &str, backend: &str) -> String {
     match backend {
-        "xyce" | "xyce-serial" | "xyce-parallel" => {
-            name.replace('%', ".")
-        }
         "ltspice" => {
             // LTspice uses `:` for hierarchy separators in node names
             name.replace(':', ".")
@@ -172,32 +169,6 @@ mod tests {
         assert_eq!(normalize_var_name("V(X1.INTERNAL)", "ngspice"), "x1.internal");
     }
 
-    // ── Xyce ──
-
-    #[test]
-    fn test_xyce_voltage() {
-        assert_eq!(normalize_var_name("V(OUT)", "xyce"), "out");
-    }
-
-    #[test]
-    fn test_xyce_current() {
-        assert_eq!(normalize_var_name("I(V1)", "xyce"), "i(v1)");
-    }
-
-    #[test]
-    fn test_xyce_hierarchy() {
-        assert_eq!(normalize_var_name("V(X1%INTERNAL)", "xyce"), "x1.internal");
-    }
-
-    #[test]
-    fn test_xyce_hierarchy_nested() {
-        assert_eq!(normalize_var_name("V(X1%X2%NET3)", "xyce"), "x1.x2.net3");
-    }
-
-    #[test]
-    fn test_xyce_current_hierarchy() {
-        assert_eq!(normalize_var_name("I(X1%V1)", "xyce"), "i(x1.v1)");
-    }
 
     // ── LTspice ──
 
@@ -259,8 +230,6 @@ mod tests {
     fn test_sweep_vars_unchanged() {
         assert_eq!(normalize_var_name("time", "ngspice"), "time");
         assert_eq!(normalize_var_name("frequency", "ngspice"), "frequency");
-        assert_eq!(normalize_var_name("TIME", "xyce"), "time");
-        assert_eq!(normalize_var_name("FREQUENCY", "xyce"), "frequency");
     }
 
     // ── Noise spectra ──
@@ -285,7 +254,6 @@ mod tests {
     #[test]
     fn test_is_current_explicit() {
         assert!(is_current_name("i(v1)", "ngspice"));
-        assert!(is_current_name("I(V1)", "xyce"));
     }
 
     #[test]
@@ -297,7 +265,6 @@ mod tests {
     #[test]
     fn test_is_not_current_voltage() {
         assert!(!is_current_name("v(out)", "ngspice"));
-        assert!(!is_current_name("V(OUT)", "xyce"));
     }
 
     #[test]
@@ -336,20 +303,20 @@ mod tests {
     #[test]
     fn test_same_circuit_same_normalized_keys() {
         let names_ng = ["time", "v(out)", "v(in)", "i(V1)"];
-        let names_xy = ["TIME", "V(OUT)", "V(IN)", "I(V1)"];
+        let names_lt = ["TIME", "V(OUT)", "V(IN)", "I(V1)"];
         let names_sp = ["time", "out", "in", "V1:p"];
 
         let norm_ng: Vec<String> = names_ng.iter()
             .map(|n| normalize_var_name(n, "ngspice"))
             .collect();
-        let norm_xy: Vec<String> = names_xy.iter()
-            .map(|n| normalize_var_name(n, "xyce"))
+        let norm_lt: Vec<String> = names_lt.iter()
+            .map(|n| normalize_var_name(n, "ltspice"))
             .collect();
         let norm_sp: Vec<String> = names_sp.iter()
             .map(|n| normalize_var_name(n, "spectre"))
             .collect();
 
-        assert_eq!(norm_ng, norm_xy, "ngspice vs xyce");
+        assert_eq!(norm_ng, norm_lt, "ngspice vs ltspice");
         assert_eq!(norm_ng, norm_sp, "ngspice vs spectre");
     }
 }

@@ -78,10 +78,9 @@ Queue on a `Testbench` with `add_*`; run on a `Testbench` or `CircuitSimulator` 
 
 `add_fourier` emits ngspice's `.four`, whose output table is not parsed — the
 harmonics are unreachable. For THD, compute a Goertzel over the transient
-waveform, or use Xyce's native FFT via `xyce_fft` on a `CircuitSimulator`.
+waveform.
 
-Backend-specific, `CircuitSimulator` only: `xyce_sampling`, `xyce_pce`,
-`xyce_embedded_sampling`, `xyce_fft`, `spectre_sweep`, `spectre_montecarlo`,
+Backend-specific, `CircuitSimulator` only: `spectre_sweep`, `spectre_montecarlo`,
 `spectre_pac`, `spectre_pnoise`, `spectre_pstb`, `spectre_pxf`, `network_params`.
 `Testbench` has the `add_*` builder forms of the sampling and sweep variants.
 
@@ -130,15 +129,15 @@ The `u_Ω` family is registered with U+03A9 and does work.
 
 Declared in `src/backend/*.rs`; these gate automatic backend selection.
 
-| | ngspice | Xyce | LTspice | Spectre | vacask |
-|---|---|---|---|---|---|
-| XSPICE | yes | no | no | no | no |
-| OSDI | yes | no | no | yes | yes |
-| `.measure` | yes | yes | yes | **no** | **no** |
-| `.step` params | **no** | yes | yes | yes | **no** |
-| control blocks | yes | no | no | no | no |
-| Laplace sources | yes | no | yes | no | no |
-| Verilog co-sim | yes | no | no | yes | no |
+| | ngspice | ltspice | vacask | spectre |
+|---|---|---|---|---|
+| XSPICE | yes | no | no | no |
+| OSDI | yes | no | yes | yes |
+| `.measure` | yes | yes | **no** | yes |
+| `.step` params | **no** | yes | yes | yes |
+| control blocks | yes | no | no | no |
+| Laplace sources | yes | yes | no | no |
+| Verilog co-sim | yes | no | no | yes |
 
 `ps.lint(netlist, backend=None)` takes the **netlist text**, not a `Circuit` —
 pass `str(circuit)` or `tb.netlist(backend)`. It returns

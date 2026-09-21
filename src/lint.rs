@@ -242,7 +242,7 @@ fn check_zero_value_components(lines: &[&str], result: &mut LintResult) {
                         line: line_num,
                         message: format!("Resistor '{}' has zero resistance", parts[0]),
                         suggestion: Some("Use a small value (e.g., 1m) or a voltage source instead".to_string()),
-                        backends_affected: vec!["ngspice".to_string(), "xyce".to_string(), "ltspice".to_string()],
+                        backends_affected: vec!["ngspice".to_string(), "ltspice".to_string()],
                     });
                 }
             'C'
@@ -251,7 +251,7 @@ fn check_zero_value_components(lines: &[&str], result: &mut LintResult) {
                         line: line_num,
                         message: format!("Capacitor '{}' has zero capacitance", parts[0]),
                         suggestion: Some("Remove the capacitor or use a small value".to_string()),
-                        backends_affected: vec!["ngspice".to_string(), "xyce".to_string()],
+                        backends_affected: vec!["ngspice".to_string()],
                     });
                 }
             _ => {}
@@ -390,9 +390,6 @@ fn check_backend_specific(lines: &[&str], backend: &str, result: &mut LintResult
         "ngspice" | "ngspice-subprocess" | "ngspice-shared" => {
             check_ngspice_specific(lines, result);
         }
-        "xyce" | "xyce-serial" | "xyce-parallel" => {
-            check_xyce_specific(lines, result);
-        }
         "ltspice" => {
             check_ltspice_specific(lines, result);
         }
@@ -414,36 +411,6 @@ fn check_ngspice_specific(lines: &[&str], result: &mut LintResult) {
                 message: ".meas only produces output in batch mode (ngspice -b)".to_string(),
                 suggestion: Some("Run with ngspice -b, not interactive mode".to_string()),
                 backends_affected: vec!["ngspice".to_string()],
-            });
-        }
-    }
-}
-
-fn check_xyce_specific(lines: &[&str], result: &mut LintResult) {
-    for (idx, line) in lines.iter().enumerate() {
-        let upper = line.trim().to_uppercase();
-        let line_num = idx + 1;
-
-        if upper.starts_with(".CONTROL") {
-            result.errors.push(LintError {
-                line: line_num,
-                message: ".control blocks are not supported by Xyce".to_string(),
-            });
-        }
-        if upper.starts_with(".PZ") {
-            result.warnings.push(LintWarning {
-                line: line_num,
-                message: ".pz (pole-zero) analysis is not supported by Xyce".to_string(),
-                suggestion: Some("Use .ac analysis and post-process for poles/zeros".to_string()),
-                backends_affected: vec!["xyce".to_string()],
-            });
-        }
-        if upper.starts_with(".DISTO") {
-            result.warnings.push(LintWarning {
-                line: line_num,
-                message: ".disto analysis is not supported by Xyce".to_string(),
-                suggestion: Some("Use .tran with FFT post-processing instead".to_string()),
-                backends_affected: vec!["xyce".to_string()],
             });
         }
     }
@@ -647,20 +614,6 @@ mod tests {
         let netlist = ".title test\nR1 a 0 1k\n.meas tran rise_time trig v(a)\n.end\n";
         let result = lint_netlist(netlist, Some("ngspice"));
         assert!(result.warnings.iter().any(|w| w.message.contains("batch mode")));
-    }
-
-    #[test]
-    fn test_xyce_control_block() {
-        let netlist = ".title test\nR1 a 0 1k\n.control\nrun\n.endc\n.end\n";
-        let result = lint_netlist(netlist, Some("xyce"));
-        assert!(result.errors.iter().any(|e| e.message.contains(".control")));
-    }
-
-    #[test]
-    fn test_xyce_pz_warning() {
-        let netlist = ".title test\nR1 a 0 1k\n.pz a 0 a 0 vol pz\n.end\n";
-        let result = lint_netlist(netlist, Some("xyce"));
-        assert!(result.warnings.iter().any(|w| w.message.contains(".pz")));
     }
 
     #[test]

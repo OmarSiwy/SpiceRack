@@ -204,18 +204,6 @@ class TestBackendSpecific:
         warnings = result["warnings"]
         assert any("batch" in w["message"].lower() for w in warnings)
 
-    def test_xyce_control_error(self):
-        result = lint()(".title t\nR1 a 0 1k\n.control\nrun\n.endc\n.end\n",
-                        backend="xyce")
-        errors = result["errors"]
-        assert any(".control" in e["message"] for e in errors)
-
-    def test_xyce_pz_warning(self):
-        result = lint()(".title t\nR1 a 0 1k\n.pz a 0 a 0 vol pz\n.end\n",
-                        backend="xyce")
-        warnings = result["warnings"]
-        assert any(".pz" in w["message"] for w in warnings)
-
     def test_ltspice_sens_warning(self):
         result = lint()(".title t\nR1 a 0 1k\n.sens v(a)\n.end\n",
                         backend="ltspice")

@@ -125,7 +125,7 @@ keyword-only unless noted.</p>
 <tr><td><code>.check_backend(name) -> list[str]</code></td><td>Compatibility issues for a backend.</td></tr>
 <tr><td>stimulus methods</td><td>Exactly <code>V</code>, <code>I</code>, <code>R</code>, <code>C</code>, <code>SinusoidalVoltageSource</code>, <code>SinusoidalCurrentSource</code>, <code>PulseVoltageSource</code>, <code>PulseCurrentSource</code>, <code>PieceWiseLinearVoltageSource</code>, <code>PieceWiseLinearCurrentSource</code>. No other element or directive methods, and no <code>.gnd</code> (use the DUT's).</td></tr>
 <tr><td>config methods</td><td>Same as <code>CircuitSimulator</code> below, except <code>.save_currents</code>.</td></tr>
-<tr><td>analysis methods</td><td>The generic analyses below, except <code>network_params</code>. Backend-specific analyses are builder forms only: <code>.add_xyce_sampling</code>, <code>.add_xyce_embedded_sampling</code>, <code>.add_xyce_pce</code>, <code>.add_spectre_sweep</code>, <code>.add_spectre_monte_carlo</code>.</td></tr>
+<tr><td>analysis methods</td><td>The generic analyses below, except <code>network_params</code>. Backend-specific analyses are builder forms only: <code>.add_spectre_sweep</code>, <code>.add_spectre_monte_carlo</code>.</td></tr>
 </table>
 
 <h2 id="simulator">CircuitSimulator</h2>
@@ -181,17 +181,6 @@ keyword-only unless noted.</p>
 <tr><td><code>spectre_pxf(pss_fundamental, pss_stabilization, output_node, source, pss_harmonics=10, variation="dec", points=100, start_freq=1.0, stop_freq=1e9)</code></td><td><code>AcAnalysis</code></td></tr>
 <tr><td><code>spectre_pstb(pss_fundamental, pss_stabilization, probe, pss_harmonics=10, variation="dec", points=100, start_freq=1.0, stop_freq=1e9)</code></td><td><code>StabilityAnalysis</code></td></tr>
 </table>
-<h3>Xyce</h3>
-<table>
-<tr><th>Method</th><th>Returns</th></tr>
-<tr><td><code>xyce_sampling(num_samples, param_distributions: list[tuple[str, str]])</code></td><td><code>SamplingAnalysis</code></td></tr>
-<tr><td><code>xyce_embedded_sampling(num_samples, param_distributions)</code></td><td><code>SamplingAnalysis</code></td></tr>
-<tr><td><code>xyce_pce(num_samples, param_distributions, expansion_order=3)</code></td><td><code>SamplingAnalysis</code></td></tr>
-<tr><td><code>xyce_fft(signal, np=1024, start=0.0, stop=1e-3, window="HANN", format="UNORM")</code></td><td><code>XyceFftAnalysis</code></td></tr>
-</table>
-<p>Distribution strings: <code>"normal(mean,stddev)"</code>,
-<code>"uniform(low,high)"</code>.</p>
-
 <h2 id="results">Result types</h2>
 <p>Common interface on every result: <code>res["name"]</code> /
 <code>res.name</code> → <code>list[float]</code> (a single float for
@@ -209,7 +198,6 @@ float). <code>.nodes</code> and <code>.branches</code> exist on
 <tr><td><code>DistortionAnalysis</code></td><td><code>.frequency</code></td></tr>
 <tr><td><code>PssAnalysis</code>, <code>SParamAnalysis</code>, <code>HarmonicBalanceAnalysis</code>, <code>StabilityAnalysis</code>, <code>TransientNoiseAnalysis</code></td><td><code>.frequency</code> or <code>.time</code> axis</td></tr>
 <tr><td><code>SamplingAnalysis</code></td><td>None</td></tr>
-<tr><td><code>XyceFftAnalysis</code></td><td><code>.frequency</code>, <code>.magnitude</code>, <code>.phase</code>, <code>.enob</code>, <code>.sfdr_db</code>, <code>.snr_db</code>, <code>.thd_db</code></td></tr>
 <tr><td><code>RawData</code></td><td><code>.title</code>, <code>.plot_name</code>, <code>.is_complex</code>, <code>.variable_names</code></td></tr>
 </table>
 
