@@ -94,7 +94,67 @@ objects — build the rules yourself as above.
 reducers: `first last min max mean abs_max peak_to_peak at crossing_time`.
 
 `corner_netlists(bench_factory, [CornerCase(...)])` returns `{corner_name: netlist}`.
-`monte_carlo_netlist(bench, MonteCarloPlan(samples=, distributions=))` emits a sampling deck.
+`monte_carlo_netlist` is Spectre-only — real signatures and the ngspice route are in [`PDK_AND_FLOW.md`](PDK_AND_FLOW.md).
+
+## Corner / Monte Carlo runner
+
+```python
+from spicerack.testbenches import pdk_corners, run_corners
+
+def build(corner):                      # fresh bench per run; reads corner.vdd itself
+    tb = ps.Testbench(dut)
+    tb.V(name="dd", positive="vdd", negative="0", value=corner.vdd or 1.8)
+    return tb
+
+def measure(tb):                        # runs the analysis, returns {metric: value}
+    return {"vout_v": tb.operating_point()["vout"]}
+
+corners = pdk_corners(LIB, ["tt", "ss", "ff"], temperatures=[-40, 27, 125], vdds=[1.62, 1.98])
+rows = run_corners(build, measure, corners)                  # one row per corner
+rows = run_corners(build, measure, pdk_corners(LIB, ["tt_mm"]), seeds=100)   # mismatch MC
+```
+
+* `run_corners(build, measure, corners=(), *, seeds=None, backend="ngspice") -> list[dict]`.
+  Each row is `{"corner", "seed", "temperature", "vdd", **metrics}`; a run that raises gets
+  `"error": "<Type>: <message>"` instead of metrics, so filter on it.
+* After `build(corner)` it applies the corner's temperature, model libraries and
+  `.param` values, and `.options seed=<n>` per seed. `seeds=N` means `1..N`.
+* A seed changes nothing unless the models are statistical (a PDK mismatch section or
+  `agauss`). ngspice draws are reproducible per seed.
+* `pdk_corners(library, sections, temperatures=(27,), vdds=(None,))` crosses them into
+  `CornerCase`s named `ss_125C_1.62V`. `CornerCase.vdd` is read by your builder; nothing
+  else applies it, because only the builder knows which source is the supply.
+* Runs are sequential. A sky130 run spends ~7 s loading the model library, so
+  45 corners x 100 seeds is hours.
+
+## Cell characterization (for Liberty)
+
+`from spicerack.testbenches import input_capacitance, delay_table, setup_time, hold_time, bisect_boundary`
+
+The DUT is a `Subcircuit` whose ports are the cell pins. `bias={pin: volts}` drives the
+pins a recipe does not (supplies, other inputs); `loads={pin: farads}` adds caps to
+ground. Everything returns SI values with the unit in the key.
+
+| Call | Returns |
+|---|---|
+| `input_capacitance(ps, dut, *, pin, vdd, slew=100e-12, settle=None, bias=, loads=)` | `{"c_rise_f", "c_fall_f"}` |
+| `delay_table(ps, dut, *, input_pin, output_pin, vdd, slews, loads, window=10e-9, slew_lower=0.2, slew_upper=0.8, delay_threshold=0.5, bias=)` | `{"index_1_s", "index_2_f", "cell_rise_s", "cell_fall_s", "rise_transition_s", "fall_transition_s"}` |
+| `setup_time(ps, dut, *, data_pin, clock_pin, vdd, passes, search=(-1e-9, 1e-9), tol=1e-12, data_edge="rise", clock_edge="rise", slew=50e-12, clock_time=5e-9, window=5e-9, bias=, loads=)` | `{"setup_s"}` |
+| `hold_time(...)` (same arguments, `data_edge="fall"`) | `{"hold_s"}` |
+| `bisect_boundary(passes, lo, hi, tol)` | smallest passing `x` |
+
+* **Pin cap** is the charge method: `C = -∫i dt / ΔV` over each ramp plus `settle`
+  (default one `slew`). Charge behind a series resistance arrives late; widen `settle`
+  if the answer moves with it. DC leakage counts as charge.
+* **NLDM tables** are `table[i][j]` at `slews[i]`, `loads[j]`, keyed by **output** edge
+  (Liberty's convention), so inverting cells need no flag. `slew` is the
+  `slew_lower`–`slew_upper` time; the ramp itself lasts `slew / (upper - lower)`.
+  `window` must cover the slowest output edge, or it raises `widen window=`.
+* **Setup/hold** bisect the data-to-clock skew on `passes(tran) -> bool`, which you
+  write (e.g. "q equals the new data at the end"). Setup: data makes `data_edge` at
+  `clock_time - skew`. Hold: data leaves its old value at `clock_time + skew` (negative
+  hold is fine). Edges are referenced at 50 %. `passes` must be true at `search[1]` and
+  false at `search[0]`, or it raises rather than return a bracket end.
 
 ## Writing a new bench
 

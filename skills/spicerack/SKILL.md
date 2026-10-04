@@ -33,11 +33,13 @@ Each of these returns a plausible wrong number rather than an error.
 
 **`ac[node]` is the real part, not the magnitude.** For a Bode plot use `ac.magnitude(node)`, `ac.magnitude_db(node)` and `ac.phase(node)` (degrees). At 100 Hz on a 159 Hz RC, `ac["vout"]` reads 0.7170 while `|H|` is 0.8467. `.magnitude()` exists only on `AcAnalysis`.
 
-**ngspice ignores `.step`.** The codegen emits it commented out (`* .step param temp ...`), so a swept bench runs once and silently reports one operating point. Sweep by rebuilding the testbench in a Python loop, one run per point. LTspice, VACASK and Spectre support parameter sweeps natively.
+**ngspice has no `.step`.** `tb.step()` then `netlist("ngspice")` raises a codegen error, and a run without a forced backend auto-routes away from ngspice (to VACASK when installed). Sweep by rebuilding the testbench in a Python loop, one run per point — `run_corners` does exactly that for corners and seeds. LTspice, VACASK and Spectre support parameter sweeps natively.
 
 **Use ASCII micro units: `u_uF`, `u_uH`, `u_uA`, `u_uV`, `u_uW`, `u_us`.** Python normalises identifiers, so a `u_µF` spelled with U+00B5 cannot be imported. The `u_Ω` family does work.
 
 **`.nodes` and `.branches` exist only on `DcAnalysis`.** `.measures` is on every result type. Elsewhere, index the result: `res["vout"]`.
+
+**A `UnitValue` in `**kwargs` is written as its SI number.** `M(..., W=1 @ u_MOhm)` emits `W=1e6`. Strings pass through verbatim, so expressions go in as `"{w*2}"`.
 
 **Results are `list[float]`, not numpy arrays.** Slice and iterate them; `.mean()` and stride-slicing raise.
 
@@ -53,8 +55,10 @@ Bandwidth defaults to the half-power point, `HALF_POWER_DB` = 3.0103 dB. A round
 
 ## Backends
 
-`ngspice` is the default and the only one assumed present. Declared features gate backend selection, so a bench that asks for `.measure` support will not route to vacask. Check with `tb.check_backend(name)` and `ps.CircuitSimulator.available_backends()`.
+Names: `ngspice` (alias `ngspice-subprocess`), `ngspice-shared`, `ltspice`, `vacask`, `vacask-shared`, `spectre` — nothing else (no ESPice, no Xyce); `with_backend()` / `simulator()` raise `ValueError` on any other name. Pick one with `tb.with_backend(name)`; no env var selects a backend. Forced `vacask` rejects `dc`. `ngspice` is the default and the only one assumed present. Declared features gate backend selection, so a bench that asks for `.measure` support will not route to vacask. Check with `tb.check_backend(name)` and `ps.CircuitSimulator.available_backends()`.
 
 → Element signatures per class, analysis signatures, the unit list, and the backend capability matrix: [`REFERENCE.md`](REFERENCE.md)
 
-→ The 13 built-in benches, the declared-vs-computed metric contract, and how to write a new bench: [`TESTBENCHES.md`](TESTBENCHES.md)
+→ PDK libraries, corners, Monte Carlo, PDK devices with parameters, Verilog-A devices, external (post-layout) netlists as DUT, printing a bare `.subckt`: [`PDK_AND_FLOW.md`](PDK_AND_FLOW.md)
+
+→ The 13 built-in benches, the declared-vs-computed metric contract, cell characterization (pin cap, NLDM tables, setup/hold), the corner/MC runner, and how to write a new bench: [`TESTBENCHES.md`](TESTBENCHES.md)

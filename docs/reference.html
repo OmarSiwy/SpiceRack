@@ -80,7 +80,7 @@ keyword-only unless noted.</p>
 <tr><td><code>S</code></td><td>S</td><td><code>(name, positive, negative, control_positive, control_negative, model)</code> (V-controlled switch)</td></tr>
 <tr><td><code>W</code></td><td>W</td><td><code>(name, positive, negative, vcontrol, model)</code> (I-controlled switch)</td></tr>
 <tr><td><code>T</code></td><td>T</td><td><code>(name, input_positive, input_negative, output_positive, output_negative, Z0, TD)</code></td></tr>
-<tr><td><code>X</code></td><td>X</td><td><code>(name, subcircuit_name, *nodes)</code> (positional)</td></tr>
+<tr><td><code>X</code></td><td>X</td><td><code>(name, subcircuit_name, *nodes, **params)</code> (name and nodes positional; params become <code>k=v</code> on the card)</td></tr>
 <tr><td><code>A</code></td><td>A</td><td><code>(name, connections: list[str], model)</code> (XSPICE code model)</td></tr>
 </table>
 

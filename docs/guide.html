@@ -414,6 +414,10 @@ report = validate_metrics(metrics, [
 ])</code></pre>
 <p><code>bench.validation</code> is a <code>list[str]</code> of plain-English
 intent, not rules. Write the <code>ValidationRule</code> objects yourself.</p>
+<p><code>run_corners(build, measure, pdk_corners(lib, ["tt", "ss", "ff"], [-40, 27, 125], [1.62, 1.98]), seeds=N)</code>
+runs a bench over every corner and Monte Carlo seed and returns one metric row per run.
+<code>input_capacitance</code>, <code>delay_table</code>, <code>setup_time</code> and
+<code>hold_time</code> characterize a cell for Liberty and return SI values.</p>
 
 </main>
 <footer>SpiceRack documentation.</footer>

@@ -11,7 +11,7 @@ Available on `Circuit` and `Subcircuit`. `Testbench` carries only the rows marke
 |---|---|---|
 | `V` **TB** | `V` | `(name, positive, negative, value, ac=None, ac_phase=None)` |
 | `I` **TB** | `I` | `(name, positive, negative, value, ac=None, ac_phase=None)` |
-| `R` **TB** | `R` | `(name, positive, negative, value, raw_spice=None)` |
+| `R` **TB** | `R` | `(name, positive, negative, value, raw_spice=None)` — `raw_spice` on `Circuit`/`Subcircuit` only |
 | `C` **TB** | `C` | `(name, positive, negative, value)` |
 | `L` | `L` | `(name, positive, negative, value)` |
 | `K` | `K` | `(name, inductor1, inductor2, coupling)` |
@@ -29,25 +29,39 @@ Available on `Circuit` and `Subcircuit`. `Testbench` carries only the rows marke
 | `S` | `S` | `(name, positive, negative, control_positive, control_negative, model)` |
 | `W` | `W` | `(name, positive, negative, vcontrol, model)` |
 | `A` | `A` | `(name, connections, model)` — `connections` is a `list[str]` |
-| `X` | `X` | `X(name, subcircuit_name, *nodes)` — **fully positional**, including `name` |
+| `X` | `X` | `X(name, subcircuit_name, *nodes, **params)` — name and nodes positional; `params` become `k=v` on the card |
 
 Current-controlled sources (`F`, `H`) sense through a named voltage source; add a
 0 V source in the branch you want to measure.
 
+`**kwargs` values (`M`, `X`, `model`, `Subcircuit(..., **params)`, `options`): a
+`UnitValue` is written as its SI number (`1 @ u_MOhm` -> `1e6`); anything else is its
+`str()`, so pass expressions as `"{w*2}"`. A PDK device that is a subcircuit (all sky130
+and gf180 FETs) is an `X` with parameters:
+
+```python
+dut.X("MN1", "sky130_fd_pr__nfet_01v8", "d", "g", "s", "b", W=1, L=0.15, nf=2)
+# -> XMN1 d g s b sky130_fd_pr__nfet_01v8 W=1 L=0.15 nf=2
+```
+
+`Subcircuit.instance(subckt, name, *nodes, **params)` is the same card from the object.
+
 Waveform sources, all **TB**:
 
 ```python
-tb.SinusoidalVoltageSource(name=, positive=, negative=, offset=, amplitude=, frequency=,
-                           delay=, damping=, phase=, ac=, ac_phase=)
-tb.PulseVoltageSource(name=, positive=, negative=, initial_value=, pulsed_value=,
-                      pulse_width=, period=, delay_time=, rise_time=, fall_time=)
+tb.SinusoidalVoltageSource(name=, positive=, negative=, dc_offset=0, offset=0,
+                           amplitude=1, frequency=1000, ac=, ac_phase=)   # no delay/damping/phase
+tb.PulseVoltageSource(name=, positive=, negative=, initial_value=0, pulsed_value=1,
+                      pulse_width=50e-9, period=100e-9, rise_time=1e-9, fall_time=1e-9)  # no delay_time
 tb.PieceWiseLinearVoltageSource(name=, positive=, negative=, values=[(t, v), ...])
 ```
-Current variants replace `Voltage` with `Current`.
+Current variants replace `Voltage` with `Current`. `dc_offset` is the DC (operating-point)
+value; `offset` is the SIN offset. `PieceWiseLinearCurrentSource` exists on `Testbench`
+only, and `ac=`/`ac_phase=` on the sinusoid only on `Testbench`/`Subcircuit`.
 
-**Set `rise_time` and `fall_time` explicitly on a pulse.** Unspecified, ngspice
-defaults them to the transient `step_time`, which silently makes edge-rate-dependent
-results (charge injection, propagation delay, pedestal) track your timestep.
+Neither waveform takes a delay: for an edge at a chosen time, use a PWL. `rise_time` /
+`fall_time` default to 1 ns — set them to the edge rate the spec assumes, since charge
+injection, propagation delay and pedestal all track them.
 
 ## Directives
 
@@ -56,7 +70,8 @@ results (charge injection, propagation delay, pedestal) track your timestep.
 `osdi(...)`, `verilog(...)`. `temp(value)` and `options(**kw)` are `Circuit` only.
 
 `Testbench`: `extra_line(text)`, `options(**kw)`, `temperature`, `nominal_temperature`,
-`initial_condition(**nodes)`, `node_set(**nodes)`, `save(*signals)`, `use_pdk(...)`.
+`initial_condition(**nodes)`, `node_set(**nodes)`, `save(*signals)`, `use_pdk(...)`,
+`add_subcircuit(sub)`. `tb.temperature` / `tb.nominal_temperature` are write-only.
 
 ## Analyses
 
