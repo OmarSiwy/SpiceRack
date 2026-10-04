@@ -693,6 +693,9 @@ class CornerCase:
     nominal_temperature: float | None = None
     parameters: Mapping[str, Any] = field(default_factory=dict)
     model_libraries: Sequence[Any] = field(default_factory=tuple)
+    #: Supply for this corner. Nothing applies it: the bench builder reads it,
+    #: since only the builder knows which source is the supply.
+    vdd: float | None = None
 
     def apply_to(self, bench_or_testbench: Any, backend: str = "ngspice") -> Any:
         tb = _testbench(bench_or_testbench)
@@ -724,6 +727,68 @@ def corner_netlists(
         selected_backend = corner.backend or backend
         netlists[corner.name] = _testbench(bench).netlist(selected_backend)
     return netlists
+
+
+def pdk_corners(
+    library: str,
+    sections: Sequence[str],
+    temperatures: Sequence[float] = (27.0,),
+    vdds: Sequence[float | None] = (None,),
+) -> list[CornerCase]:
+    """Every ``section x temperature x vdd`` of one model library, named like
+    ``ss_125C_1.62V``. ``sections`` are the library's own ``.lib`` names."""
+    from spicerack import ModelLibrary
+
+    corners = []
+    for section in sections:
+        for temp in temperatures:
+            for vdd in vdds:
+                name = f"{section}_{temp:g}C" + ("" if vdd is None else f"_{vdd:g}V")
+                corners.append(CornerCase(name, temperature=temp, vdd=vdd,
+                                          model_libraries=(ModelLibrary(library, corner=section),)))
+    return corners
+
+
+def run_corners(
+    build: Callable[[CornerCase], Any],
+    measure: Callable[[Any], Mapping[str, float]],
+    corners: Sequence[CornerCase] = (),
+    *,
+    seeds: int | Sequence[int] | None = None,
+    backend: str = "ngspice",
+) -> list[dict[str, Any]]:
+    """Run one bench over every corner (and Monte Carlo seed); one row per run.
+
+    ``build(corner)`` returns a fresh ``Testbench`` (or ``DesignBench``) and
+    reads ``corner.vdd`` itself; the runner then applies the corner's
+    temperature, model libraries and ``.param`` values, plus ``.options
+    seed=<n>`` for each seed. ``measure(tb)`` runs the analysis and returns
+    ``{metric: value}``. No corners means one ``nominal`` corner.
+
+    ``seeds=N`` means seeds ``1..N``. A seed only changes anything when the
+    models are statistical (e.g. a PDK ``*_mm`` / mismatch section, or
+    ``agauss`` parameters); ngspice draws are reproducible per seed.
+
+    Each row is ``{"corner", "seed", "temperature", "vdd", **metrics}``. A run
+    that raises gets ``"error": str`` instead of metrics, so one
+    non-converging corner does not discard the rest of the sweep.
+    """
+    if isinstance(seeds, int):
+        seeds = range(1, seeds + 1)
+    rows: list[dict[str, Any]] = []
+    for corner in corners or (CornerCase("nominal"),):
+        for seed in seeds if seeds is not None else (None,):
+            row: dict[str, Any] = {"corner": corner.name, "seed": seed,
+                                   "temperature": corner.temperature, "vdd": corner.vdd}
+            try:
+                bench = corner.apply_to(build(corner), backend)
+                if seed is not None:
+                    _testbench(bench).options(seed=seed)
+                row.update(measure(bench))
+            except Exception as exc:  # noqa: BLE001 - recorded in the row
+                row["error"] = f"{type(exc).__name__}: {exc}"
+            rows.append(row)
+    return rows
 
 
 @dataclass(frozen=True)
