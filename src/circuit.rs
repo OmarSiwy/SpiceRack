@@ -1465,11 +1465,22 @@ impl Circuit {
         subcircuit_name: impl Into<String>,
         nodes: Vec<impl Into<Node>>,
     ) -> &Element {
+        self.x_with_params(name, subcircuit_name, nodes, Vec::new())
+    }
+
+    /// Subcircuit instance with `name=value` parameters after the master name.
+    pub fn x_with_params(
+        &mut self,
+        name: impl Into<String>,
+        subcircuit_name: impl Into<String>,
+        nodes: Vec<impl Into<Node>>,
+        params: Vec<Param>,
+    ) -> &Element {
         self.elements.push(Element::X(SubcircuitInstance {
             name: name.into(),
             subcircuit_name: subcircuit_name.into(),
             nodes: nodes.into_iter().map(|n| n.into()).collect(),
-            params: Vec::new(),
+            params,
         }));
         self.elements.last().unwrap()
     }

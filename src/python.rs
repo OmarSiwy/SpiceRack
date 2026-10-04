@@ -125,6 +125,30 @@ impl PyUnitValue {
 
 // ── Value argument: accept float or UnitValue from Python ──
 
+/// Text of a `**kwargs` parameter value on an element, model or instance card.
+///
+/// A `UnitValue` is written as its SI value (`1e-6`), never its display form:
+/// `str(1 @ u_MOhm)` is `1MOhm`, which every SPICE reads as 1 milliohm, and
+/// `1F` reads as one femtofarad. Everything else keeps its Python `str()`, so
+/// expressions such as `"{w*2}"` pass through verbatim.
+fn param_value(v: &Bound<'_, PyAny>) -> PyResult<String> {
+    if let Ok(uv) = v.extract::<PyUnitValue>() {
+        return Ok(format!("{:e}", uv.inner.value));
+    }
+    Ok(v.str()?.to_string())
+}
+
+/// `**params` as ordered `(name, value)` pairs for an `X` card.
+fn instance_params(params: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Vec<(String, String)>> {
+    let mut out = vec![];
+    if let Some(dict) = params {
+        for (k, v) in dict.iter() {
+            out.push((k.extract::<String>()?, param_value(&v)?));
+        }
+    }
+    Ok(out)
+}
+
 #[derive(FromPyObject)]
 enum PyValueArg {
     Float(f64),
@@ -256,7 +280,7 @@ impl PyCircuit {
         if let Some(dict) = kwargs {
             for (k, v) in dict.iter() {
                 let key: String = k.extract()?;
-                let val: String = v.str()?.to_string();
+                let val: String = param_value(&v)?;
                 params.push(Param::new(key, val));
             }
         }
@@ -298,10 +322,13 @@ impl PyCircuit {
         self.inner.t(name, input_positive, input_negative, output_positive, output_negative, Z0, TD);
     }
 
-    #[pyo3(signature = (name, subcircuit_name, *nodes))]
-    fn X(&mut self, name: &str, subcircuit_name: &str, nodes: Vec<String>) {
+    /// Subcircuit instance. `**params` land on the card as `name=value`.
+    #[pyo3(signature = (name, subcircuit_name, *nodes, **params))]
+    fn X(&mut self, name: &str, subcircuit_name: &str, nodes: Vec<String>, params: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
         let node_refs: Vec<&str> = nodes.iter().map(|s| s.as_str()).collect();
-        self.inner.x(name, subcircuit_name, node_refs);
+        let params = instance_params(params)?.into_iter().map(|(k, v)| Param::new(k, v)).collect();
+        self.inner.x_with_params(name, subcircuit_name, node_refs, params);
+        Ok(())
     }
 
     /// XSPICE code model instance (A-element).
@@ -450,7 +477,7 @@ impl PyCircuit {
         if let Some(dict) = kwargs {
             for (k, v) in dict.iter() {
                 let key: String = k.extract::<String>()?;
-                let val: String = v.str()?.to_string();
+                let val: String = param_value(&v)?;
                 params.push(Param::new(key, val));
             }
         }
@@ -475,7 +502,7 @@ impl PyCircuit {
         if let Some(dict) = kwargs {
             for (k, v) in dict.iter() {
                 let key: String = k.extract::<String>()?;
-                let val: String = v.str()?.to_string();
+                let val: String = param_value(&v)?;
                 self.inner.options(key, val);
             }
         }
@@ -818,7 +845,7 @@ impl PySimulator {
         if let Some(dict) = kwargs {
             for (k, v) in dict.iter() {
                 let key: String = k.extract::<String>()?;
-                let val: String = v.str()?.to_string();
+                let val: String = param_value(&v)?;
                 self.inner.options(key, val);
             }
         }
@@ -2876,7 +2903,7 @@ impl PySubcircuit {
         if let Some(dict) = params {
             for (k, v) in dict.iter() {
                 let key: String = k.extract()?;
-                let val: String = v.str()?.to_string();
+                let val: String = param_value(&v)?;
                 sc.parameters.push(crate::ir::ParamDef {
                     name: key,
                     default: Some(val),
@@ -3067,7 +3094,7 @@ impl PySubcircuit {
         if let Some(dict) = kwargs {
             for (k, v) in dict.iter() {
                 let key: String = k.extract()?;
-                let val: String = v.str()?.to_string();
+                let val: String = param_value(&v)?;
                 params.push((key, val));
             }
         }
@@ -3255,32 +3282,21 @@ impl PySubcircuit {
 
     #[pyo3(signature = (subckt, name, *nodes, **params))]
     fn instance(&mut self, subckt: &PySubcircuit, name: &str, nodes: Vec<String>, params: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
-        let mut param_vec = vec![];
-        if let Some(dict) = params {
-            for (k, v) in dict.iter() {
-                let key: String = k.extract()?;
-                let val: String = v.str()?.to_string();
-                param_vec.push((key, val));
-            }
-        }
-        self.inner.instances.push(crate::ir::Instance {
-            name: name.to_string(),
-            subcircuit: subckt.inner.name.clone(),
-            port_mapping: nodes,
-            parameters: param_vec,
-        });
-        Ok(())
+        let subckt_name = subckt.inner.name.clone();
+        self.X(name, &subckt_name, nodes, params)
     }
 
-    /// Subcircuit instance by name (when you don't have the PySubcircuit object)
-    #[pyo3(signature = (name, subcircuit_name, *nodes))]
-    fn X(&mut self, name: &str, subcircuit_name: &str, nodes: Vec<String>) {
+    /// Subcircuit instance by name (when you don't have the PySubcircuit object,
+    /// e.g. a PDK device). `**params` land on the card as `name=value`.
+    #[pyo3(signature = (name, subcircuit_name, *nodes, **params))]
+    fn X(&mut self, name: &str, subcircuit_name: &str, nodes: Vec<String>, params: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
         self.inner.instances.push(crate::ir::Instance {
             name: name.to_string(),
             subcircuit: subcircuit_name.to_string(),
             port_mapping: nodes,
-            parameters: vec![],
+            parameters: instance_params(params)?,
         });
+        Ok(())
     }
 
     // ── Circuit-level directives ──
@@ -3291,7 +3307,7 @@ impl PySubcircuit {
         if let Some(dict) = kwargs {
             for (k, v) in dict.iter() {
                 let key: String = k.extract()?;
-                let val: String = v.str()?.to_string();
+                let val: String = param_value(&v)?;
                 params.push((key, val));
             }
         }
@@ -3635,7 +3651,7 @@ impl PyTestbench {
         if let Some(dict) = kwargs {
             for (k, v) in dict.iter() {
                 let key: String = k.extract()?;
-                let val: String = v.str()?.to_string();
+                let val: String = param_value(&v)?;
                 self.inner.options.portable.push((key, val));
             }
         }

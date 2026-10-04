@@ -468,6 +468,56 @@ class TestSubcircuitInstances:
         assert len(data["instances"]) == 1
         assert data["instances"][0]["subcircuit"] == "MyBuf"
 
+    def test_x_params_reach_the_card_on_every_backend(self):
+        ps = import_spicerack()
+        from spicerack.unit import u_kOhm
+        top = ps.Subcircuit("top", ["a"])
+        top.X("1", "rload", "a", "0", r=3 @ u_kOhm, nf=2, w="{wn*2}")
+        tb = ps.Testbench(top)
+        cards = {
+            "ngspice": "X1 a 0 rload r=3e3 nf=2 w={wn*2}",
+            "ltspice": "X1 a 0 rload r=3e3 nf=2 w={wn*2}",
+            "spectre": "x1 (a 0) rload r=3e3 nf=2 w={wn*2}",
+        }
+        for backend, card in cards.items():
+            assert card in tb.netlist(backend).splitlines(), backend
+
+    def test_unit_value_params_are_si_not_display_text(self):
+        # str(1 @ u_MOhm) is "1MOhm", which SPICE reads as 1 milliohm.
+        ps = import_spicerack()
+        from spicerack.unit import u_MOhm, u_pF
+        sc = ps.Subcircuit("t", ["a"])
+        sc.M(name="1", drain="a", gate="a", source="0", bulk="0",
+             model="n", W=1 @ u_MOhm)
+        sc.model("cm", "C", C=1.5 @ u_pF)
+        deck = ps.Testbench(sc).netlist("ngspice")
+        assert "W=1e6" in deck
+        assert "C=1.5e-12" in deck
+
+    def test_instance_params_match_x(self):
+        ps = import_spicerack()
+        child = ps.Subcircuit("rload", ["a", "b"], r="1k")
+        top = ps.Subcircuit("top", ["a"])
+        top.instance(child, "1", "a", "0", r=2000.0)
+        assert "X1 a 0 rload r=2000" in ps.Testbench(top).netlist("ngspice")
+
+    def test_circuit_x_params_override_the_subckt_default(self):
+        import shutil
+        if not shutil.which("ngspice"):
+            pytest.skip("ngspice not installed")
+        ps = import_spicerack()
+        from spicerack.unit import u_kOhm
+        load = ps.Subcircuit("rload", ["a", "b"], r="1k")
+        load.raw_spice("R1 a b {r}")
+        c = ps.Circuit("x_params")
+        c.subcircuit(load)
+        c.V(name="s", positive="vin", negative=c.gnd, value=1.0)
+        c.R(name="t", positive="vin", negative="vout", value=1 @ u_kOhm)
+        c.X("L1", "rload", "vout", c.gnd, r=3 @ u_kOhm)
+        assert "XL1 vout 0 rload r=3e3" in str(c)
+        vout = c.simulator(simulator="ngspice").operating_point()["vout"]
+        assert abs(vout - 0.75) < 1e-9
+
 
 class TestSubcircuitSerialization:
     def test_json_roundtrip(self):
