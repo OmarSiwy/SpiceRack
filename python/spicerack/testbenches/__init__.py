@@ -16,6 +16,13 @@ from .design import (
     sample_hold,
     switch_characterization,
 )
+from .characterize import (
+    bisect_boundary,
+    delay_table,
+    hold_time,
+    input_capacitance,
+    setup_time,
+)
 from .analysis import (
     CornerCase,
     MetricSpec,
@@ -53,6 +60,11 @@ __all__ = [
     "ValidationRule",
     "YieldSummary",
     "adc_ramp",
+    "bisect_boundary",
+    "delay_table",
+    "hold_time",
+    "input_capacitance",
+    "setup_time",
     "amplifier_current_gain",
     "amplifier_transimpedance",
     "amplifier_voltage_gain",
