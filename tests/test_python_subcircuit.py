@@ -811,6 +811,35 @@ class TestTestbenchCreation:
         assert stim[0]["type"] == "CurrentSource"
         assert stim[0]["waveform"]["type"] == "Pulse"
 
+    def test_child_subcircuit_directives_reach_the_deck(self):
+        # A child's include/lib/osdi used to be dropped from Testbench decks.
+        ps = import_spicerack()
+        child = ps.Subcircuit("ch", ["a"])
+        child.include("/c.inc")
+        child.lib("/c.lib", "tt")
+        child.osdi("/c.osdi")
+        top = ps.Subcircuit("top", ["a"])
+        top.X("1", "ch", "a")
+        tb = ps.Testbench(top)
+        tb.add_subcircuit(child)
+        tb.add_subcircuit(child)
+        deck = tb.netlist("ngspice").splitlines()
+        assert deck.count(".include /c.inc") == 1
+        assert deck.count(".lib /c.lib tt") == 1
+        assert deck.count("pre_osdi /c.osdi") == 1
+        assert 'include "/c.lib" section=tt' in tb.netlist("spectre")
+
+    def test_unknown_backend_is_refused_at_selection(self):
+        ps = import_spicerack()
+        tb = ps.Testbench(ps.Subcircuit("d", ["a"]))
+        with pytest.raises(ValueError, match="unknown backend"):
+            tb.with_backend("xyce")
+        with pytest.raises(ValueError, match="unknown backend"):
+            ps.Circuit("c").simulator(simulator="espice")
+        for name in ["ngspice", "ngspice-subprocess", "ngspice-shared", "ltspice",
+                     "vacask", "vacask-shared", "spectre"]:
+            tb.with_backend(name)
+
     def test_add_multi_analysis_and_netlist(self):
         ps = import_spicerack()
         dut = ps.Subcircuit("multi", ["in", "out"])

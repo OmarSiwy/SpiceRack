@@ -138,6 +138,16 @@ fn param_value(v: &Bound<'_, PyAny>) -> PyResult<String> {
     Ok(v.str()?.to_string())
 }
 
+/// Refuse a backend name at selection time rather than at the first run.
+fn check_backend_name(name: &str) -> PyResult<()> {
+    if crate::backend::BackendKind::from_str(name).is_none() {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "unknown backend {name:?}; expected one of ngspice, ngspice-subprocess, \
+             ngspice-shared, ltspice, vacask, vacask-shared, spectre")));
+    }
+    Ok(())
+}
+
 /// `**params` as ordered `(name, value)` pairs for an `X` card.
 fn instance_params(params: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Vec<(String, String)>> {
     let mut out = vec![];
@@ -817,15 +827,16 @@ impl PyCircuit {
     // ── Simulator ──
 
     #[pyo3(signature = (simulator=None))]
-    fn simulator(&self, simulator: Option<&str>) -> PySimulator {
+    fn simulator(&self, simulator: Option<&str>) -> PyResult<PySimulator> {
         let sim = self.inner.simulator();
-        PySimulator {
+        Ok(PySimulator {
             inner: if let Some(name) = simulator {
+                check_backend_name(name)?;
                 sim.with_backend(name)
             } else {
                 sim
             },
-        }
+        })
     }
 }
 
@@ -3476,8 +3487,21 @@ impl PyTestbench {
     }
 
     /// Add a subcircuit definition to the testbench
+    /// Register a child definition. Its `include`/`lib`/`osdi` directives are
+    /// hoisted to the deck's top level: every backend scopes them globally, and
+    /// emitting only the child's body used to drop them silently.
     fn add_subcircuit(&mut self, subckt: &PySubcircuit) {
-        self.subcircuit_defs.push(subckt.inner.clone());
+        let child = &subckt.inner;
+        for inc in &child.includes {
+            if !self.dut.includes.contains(inc) { self.dut.includes.push(inc.clone()); }
+        }
+        for lib in &child.libs {
+            if !self.dut.libs.contains(lib) { self.dut.libs.push(lib.clone()); }
+        }
+        for osdi in &child.osdi_loads {
+            if !self.dut.osdi_loads.contains(osdi) { self.dut.osdi_loads.push(osdi.clone()); }
+        }
+        self.subcircuit_defs.push(child.clone());
     }
 
     /// Attach a PDK model library. Codegen resolves the per-backend path
@@ -3703,8 +3727,10 @@ impl PyTestbench {
         self.inner.measures.push(joined);
     }
 
-    fn with_backend(&mut self, name: &str) {
+    fn with_backend(&mut self, name: &str) -> PyResult<()> {
+        check_backend_name(name)?;
         self.backend_override = Some(name.to_string());
+        Ok(())
     }
 
     #[pyo3(signature = (param, start, stop, step))]
