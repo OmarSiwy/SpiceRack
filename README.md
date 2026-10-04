@@ -58,7 +58,7 @@ tb.with_backend("ngspice")
 op = tb.operating_point()
 ```
 
-Subcircuits nest. Register a definition with `tb.add_subcircuit(inverter)` or `circuit.subcircuit(inverter)`, then instantiate it with `.X("inv1", "inverter", "vdd", "a", "mid")`.
+Subcircuits nest. Register a definition with `tb.add_subcircuit(inverter)` or `circuit.subcircuit(inverter)`, then instantiate it with `.X("inv1", "inverter", "vdd", "a", "mid")`. Keyword arguments after the nodes become instance parameters, which is how PDK devices that are subcircuits get their geometry: `dut.X("MN1", "sky130_fd_pr__nfet_01v8", "d", "g", "s", "b", W=1, L=0.15)`.
 
 Ground is `dut.gnd` or `circuit.gnd`, which is node `"0"`. Element and analysis arguments are keyword-only, except for `X`, `model`, `include`, `lib`, `parameter`, `temp`, and `raw_spice`, which take positional arguments.
 
@@ -162,7 +162,7 @@ tb.measure("TRAN", "v_peak", "MAX", "V(output)")   # lands in res.measures
 tb.initial_condition(output=0.0)   # .ic
 tb.node_set(output=2.5)            # .nodeset, helps DC convergence
 
-tb.step("R1", 500, 2000, 500)
+tb.step("R1", 500, 2000, 500)                      # not ngspice: it has no .step
 tb.step_sweep("R1", 100, 10000, 10, "dec")         # lin, oct, or dec
 ```
 
@@ -195,6 +195,18 @@ for backend in ["ngspice", "vacask"]:
     tb.with_backend(backend)
     print(backend, tb.operating_point()["vout"])
 ```
+
+### Not yet a backend: ESPice / EGSpice
+
+ESPice (the ARPice repo) and its successor EGSpice are Zig simulators that run Verilog-A through VerA (`.hdl "model.va"` in the deck) instead of OpenVAF/OSDI, which is what makes `@(cross)` and `transition()` usable. Nothing here implements them. A backend needs:
+
+- **A `BackendKind` variant** (`src/backend/mod.rs`): its name in `from_str` and `display_name`, an arm in `create_backend_by_name` with its unsupported-analysis list, detection in `detect.rs` (`espice` on `$PATH`), and the name added to `check_backend_name` in `src/python.rs`.
+- **A `Backend` impl** whose `run` writes the deck, calls `espice deck.sp -r out.raw`, and returns `rawfile` output. Pick a `--format` the existing nutmeg parser reads; anything else needs a parser. Add the name to the `normalize.rs` and `measure_parse.rs` matches.
+- **A codegen**: `Spice3CodeGen` (ngspice dialect) plus one dialect switch. `veriloga()`/`osdi()` become `.hdl "<.va path>"`, with no `pre_osdi` control block and no OpenVAF compile. VA instances must use a variable-node-count letter (`N`, `X`, `U`), since ESPice splits nodes from the model by letter.
+- **Honest `capabilities()`**: no XSPICE, no `.control`. ESPice ignores nodesets, so `node_set` should be refused, not dropped. Whether `.measure` and `.step` work has to be checked against the real binary before they are declared.
+- **Lint for silent failures**: ESPice ignores misspelled instance parameters and grounds missing ports. Lint should flag a parameter that is not declared in the `.va`.
+- **Tests** like `tests/test_vacask_runs.rs`: one deck per analysis, checked against a closed form.
+- **Blocker:** as of 2026-09-29 EGSpice's build rejects even a resistor, and ESPice needs a writable source tree for its `.hdl` cache.
 
 ## PDKs and model libraries
 
@@ -276,7 +288,9 @@ report = validate_metrics(metrics, [
 ])
 ```
 
-`MonteCarloPlan` describes a statistical run the same way `CornerCase` describes a corner: a backend, a sample count, per-parameter distributions, and a mode of either `sampling` or `pce`. Apply it with `plan.apply_to(bench)` or get the text straight from `monte_carlo_netlist(bench, plan)`. One thing to know: `bench.validation` is a `list[str]` of plain-English intent, not executable rules. You write the `ValidationRule` objects yourself.
+`run_corners(build, measure, corners, seeds=N)` runs a bench over every corner (model library section, temperature, supply, via `pdk_corners(lib, sections, temperatures, vdds)`) and every Monte Carlo seed, and returns one metric row per run. `MonteCarloPlan` instead emits a Spectre `montecarlo` statement (Spectre only); apply it with `plan.apply_to(bench)` or get the text straight from `monte_carlo_netlist(bench, plan)`.
+
+For Liberty characterization there are `input_capacitance` (charge method, rise and fall), `delay_table` (NLDM delay and output transition over input slew x load), and `setup_time` / `hold_time` (bisection on your pass/fail predicate). One thing to know: `bench.validation` is a `list[str]` of plain-English intent, not executable rules. You write the `ValidationRule` objects yourself.
 
 ## Output file parsing
 
