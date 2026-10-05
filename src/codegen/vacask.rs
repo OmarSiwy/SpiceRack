@@ -605,8 +605,8 @@ impl CodeGen for VacaskCodeGen {
                 loads.insert(format!("spice/{}.osdi", m));
             }
         }
-        for path in &ir.top.osdi_loads {
-            loads.insert(path.clone());
+        for path in crate::veriloga::osdi_loads(&ir.top.osdi_loads).map_err(CodeGenError::Other)? {
+            loads.insert(path);
         }
 
         let title = ir.top.name.replace(['\n', '\r'], " ");

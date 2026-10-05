@@ -1,3 +1,4 @@
+pub mod espice;
 pub mod laplace;
 pub mod spice3;
 pub mod spectre;

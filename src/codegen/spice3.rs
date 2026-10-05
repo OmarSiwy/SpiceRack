@@ -232,8 +232,9 @@ impl CodeGen for Spice3CodeGen {
         // OSDI loads (ngspice only — must precede component references)
         // pre_osdi is a control command, not a dot command
         if self.dialect == Spice3Dialect::Ngspice && !ir.top.osdi_loads.is_empty() {
+            let loads = crate::veriloga::osdi_loads(&ir.top.osdi_loads).map_err(CodeGenError::Other)?;
             lines.push(".control".into());
-            for path in &ir.top.osdi_loads {
+            for path in &loads {
                 lines.push(format!("pre_osdi {}", path));
             }
             lines.push(".endc".into());

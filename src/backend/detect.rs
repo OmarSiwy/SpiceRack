@@ -45,6 +45,11 @@ pub fn detect_backends() -> &'static Vec<BackendKind> {
             backends.push(BackendKind::Spectre);
         }
 
+        // ESPice
+        if is_on_path("espice") {
+            backends.push(BackendKind::Espice);
+        }
+
         backends
     })
 }

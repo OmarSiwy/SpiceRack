@@ -144,15 +144,15 @@ The `u_Ω` family is registered with U+03A9 and does work.
 
 Declared in `src/backend/*.rs`; these gate automatic backend selection.
 
-| | ngspice | ltspice | vacask | spectre |
-|---|---|---|---|---|
-| XSPICE | yes | no | no | no |
-| OSDI | yes | no | yes | yes |
-| `.measure` | yes | yes | **no** | yes |
-| `.step` params | **no** | yes | yes | yes |
-| control blocks | yes | no | no | no |
-| Laplace sources | yes | yes | no | no |
-| Verilog co-sim | yes | no | no | yes |
+| | ngspice | ltspice | vacask | spectre | espice |
+|---|---|---|---|---|---|
+| XSPICE | yes | no | no | no | no |
+| OSDI | yes | no | yes | yes | `.va` via VerA only; `.osdi` refused |
+| `.measure` | yes | yes | **no** | yes | yes |
+| `.step` params | **no** | yes | yes | yes | **no** |
+| control blocks | yes | no | no | no | no |
+| Laplace sources | yes | yes | no | no | no |
+| Verilog co-sim | yes | no | no | yes | no |
 
 `ps.lint(netlist, backend=None)` takes the **netlist text**, not a `Circuit` —
 pass `str(circuit)` or `tb.netlist(backend)`. It returns

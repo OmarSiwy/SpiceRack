@@ -2,6 +2,7 @@ pub mod ngspice;
 pub mod ltspice;
 pub mod vacask;
 pub mod spectre;
+pub mod espice;
 pub mod detect;
 
 use crate::result::RawData;
@@ -70,6 +71,7 @@ pub enum BackendKind {
     Vacask,
     VacaskShared,
     Spectre,
+    Espice,
 }
 
 impl BackendKind {
@@ -85,6 +87,7 @@ impl BackendKind {
             "vacask" => Some(Self::Vacask),
             "vacask-shared" => Some(Self::VacaskShared),
             "spectre" => Some(Self::Spectre),
+            "espice" => Some(Self::Espice),
             _ => None,
         }
     }
@@ -97,6 +100,7 @@ impl BackendKind {
             Self::Vacask => "vacask",
             Self::VacaskShared => "vacask-shared",
             Self::Spectre => "spectre",
+            Self::Espice => "espice",
         }
     }
 
@@ -122,6 +126,7 @@ impl BackendKind {
                 laplace_sources: false,
                 verilog_cosim: true,
             },
+            Self::Espice => espice::ESPICE_CAPS,
         }
     }
 }
@@ -216,7 +221,7 @@ fn analysis_backend_preference(analysis_type: &str) -> &'static [&'static str] {
         "pac" | "pnoise" | "pxf" | "pstb" | "psp" | "pdisto" |
         "hbac" | "hbnoise" | "hbsp" => &["spectre"],
         // Universal analyses — all backends
-        _ => &["ngspice", "ltspice", "vacask", "spectre"],
+        _ => &["ngspice", "ltspice", "vacask", "spectre", "espice"],
     }
 }
 
@@ -227,7 +232,10 @@ pub fn detect_and_select_with_features(
     override_backend: Option<&str>,
     features: &CircuitFeatures,
 ) -> Result<Box<dyn Backend>, BackendError> {
-    if let Some(name) = override_backend {
+    // An explicit choice wins; otherwise `$SPICERACK_BACKEND` picks one for
+    // every run in the process (a Makefile's BACKEND= reaches all benches).
+    let env_backend = std::env::var("SPICERACK_BACKEND").ok().filter(|s| !s.is_empty());
+    if let Some(name) = override_backend.or(env_backend.as_deref()) {
         return create_backend_by_name(name, analysis_type);
     }
 
@@ -295,6 +303,7 @@ fn create_backend_from_kind(kind: &BackendKind) -> Result<Box<dyn Backend>, Back
             Ok(Box::new(vacask::VacaskLibrary::new()?))
         }
         BackendKind::Spectre => Ok(Box::new(spectre::SpectreSubprocess)),
+        BackendKind::Espice => Ok(Box::new(espice::EspiceSubprocess)),
     }
 }
 
@@ -306,6 +315,11 @@ fn create_backend_by_name(name: &str, analysis_type: &str) -> Result<Box<dyn Bac
         }
         "vacask" => {
             matches!(analysis_type, "pz" | "disto" | "sens" | "sens_ac" | "dc")
+        }
+        // Not wired: these need result layouts (multi-plot, periodic) the
+        // backend does not map yet, or ESPice has no counterpart.
+        "espice" => {
+            matches!(analysis_type, "sens_ac" | "sens_tran" | "sens_adjoint" | "sampling" | "pce" | "embedded_sampling")
         }
         _ => false,
     };
@@ -333,6 +347,7 @@ fn create_backend_by_name(name: &str, analysis_type: &str) -> Result<Box<dyn Bac
         "vacask" => Ok(Box::new(vacask::VacaskSubprocess)),
         "vacask-shared" => Ok(Box::new(vacask::VacaskLibrary::new()?)),
         "spectre" => Ok(Box::new(spectre::SpectreSubprocess)),
+        "espice" => Ok(Box::new(espice::EspiceSubprocess)),
         _ => Err(BackendError::SimulationError(format!("Unknown backend: {}", name))),
     }
 }
@@ -472,6 +487,7 @@ mod tests {
             })),
             (BackendKind::Vacask, Box::new(vacask::VacaskSubprocess)),
             (BackendKind::Spectre, Box::new(spectre::SpectreSubprocess)),
+            (BackendKind::Espice, Box::new(espice::EspiceSubprocess)),
         ];
 
         for (kind, backend) in &cases {
@@ -514,6 +530,19 @@ mod tests {
         // VACASK has parameter sweeps but no measurement statement.
         assert!(!BackendKind::Vacask.capabilities().supports_features(&f));
         assert!(BackendKind::Spectre.capabilities().supports_features(&f));
+    }
+
+    #[test]
+    fn test_espice_kind_round_trips_and_is_never_preferred_first() {
+        assert_eq!(BackendKind::from_str("espice"), Some(BackendKind::Espice));
+        assert_eq!(BackendKind::Espice.display_name(), "espice");
+        let prefs = analysis_backend_preference("tran");
+        assert_eq!(prefs.last(), Some(&"espice"));
+        // OSDI-flagged circuits mean Verilog-A loads, which ESPice compiles itself.
+        let f = CircuitFeatures { has_osdi: true, has_measures: true, ..Default::default() };
+        assert!(BackendKind::Espice.capabilities().supports_features(&f));
+        let f = CircuitFeatures { has_step_params: true, ..Default::default() };
+        assert!(!BackendKind::Espice.capabilities().supports_features(&f));
     }
 
     #[test]

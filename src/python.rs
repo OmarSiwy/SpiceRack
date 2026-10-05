@@ -143,7 +143,7 @@ fn check_backend_name(name: &str) -> PyResult<()> {
     if crate::backend::BackendKind::from_str(name).is_none() {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
             "unknown backend {name:?}; expected one of ngspice, ngspice-subprocess, \
-             ngspice-shared, ltspice, vacask, vacask-shared, spectre")));
+             ngspice-shared, ltspice, vacask, vacask-shared, spectre, espice")));
     }
     Ok(())
 }
@@ -1260,6 +1260,7 @@ fn emit_ir_netlist(ir: &crate::ir::CircuitIR, backend: &str) -> PyResult<String>
         }
         "spectre" => crate::codegen::spectre::SpectreCodeGen.emit_netlist(ir),
         "vacask" => crate::codegen::vacask::VacaskCodeGen.emit_netlist(ir),
+        "espice" => crate::codegen::espice::EspiceCodeGen.emit_netlist(ir),
         _ => {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "unknown backend '{}'",
@@ -1757,74 +1758,7 @@ fn lint(netlist: &str, backend: Option<&str>) -> HashMap<String, Vec<HashMap<Str
 /// Compile Verilog-A source to OSDI. Accepts a .va file path or inline source.
 /// Returns the path to the compiled .osdi file.
 fn compile_veriloga_impl(source_or_path: &str) -> Result<String, String> {
-    use std::process::Command;
-
-    let trimmed = source_or_path.trim();
-
-    // Determine if this is a file path or inline source
-    let va_path = if trimmed.ends_with(".va") && !trimmed.contains('\n') {
-        // File path
-        let p = std::path::Path::new(trimmed);
-        if !p.exists() {
-            return Err(format!("Verilog-A file not found: {}", trimmed));
-        }
-        std::path::PathBuf::from(trimmed)
-    } else {
-        // Inline source — write to temp file
-        let dir = std::env::temp_dir().join("spicerack_va");
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| format!("Failed to create temp dir: {}", e))?;
-
-        // Hash the source for a stable filename
-        let hash = {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-            let mut h = DefaultHasher::new();
-            trimmed.hash(&mut h);
-            h.finish()
-        };
-        let va_file = dir.join(format!("inline_{:016x}.va", hash));
-        std::fs::write(&va_file, trimmed)
-            .map_err(|e| format!("Failed to write temp .va file: {}", e))?;
-        va_file
-    };
-
-    // Output .osdi path: same dir and stem as .va, with .osdi extension
-    let osdi_path = va_path.with_extension("osdi");
-
-    // Skip compilation if .osdi is newer than .va
-    if osdi_path.exists()
-        && let (Ok(va_meta), Ok(osdi_meta)) = (va_path.metadata(), osdi_path.metadata())
-            && let (Ok(va_time), Ok(osdi_time)) = (va_meta.modified(), osdi_meta.modified())
-                && osdi_time > va_time {
-                    return Ok(osdi_path.to_string_lossy().to_string());
-                }
-
-    // Compile with openvaf
-    let output = Command::new("openvaf")
-        .arg(&va_path)
-        .arg("-o")
-        .arg(&osdi_path)
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                "openvaf not found on $PATH. Install OpenVAF to compile Verilog-A models.\n\
-                 See: https://openvaf.semimod.de".to_string()
-            } else {
-                format!("Failed to run openvaf: {}", e)
-            }
-        })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(format!(
-            "openvaf compilation failed (exit {}):\n{}\n{}",
-            output.status, stderr, stdout
-        ));
-    }
-
-    Ok(osdi_path.to_string_lossy().to_string())
+    crate::veriloga::compile_osdi(&crate::veriloga::resolve(source_or_path)?)
 }
 
 /// Compile a Verilog-A source file or inline source to OSDI.
@@ -3353,11 +3287,16 @@ impl PySubcircuit {
         });
     }
 
+    /// Load a Verilog-A model (file path or inline source). The `.va` is
+    /// recorded, not compiled: the backend's codegen compiles it with OpenVAF
+    /// for ngspice/VACASK, includes it for Spectre, and hands it to ESPice as
+    /// `.hdl` (VerA). Returns the resolved `.va` path.
     fn veriloga(&mut self, source_or_path: &str) -> PyResult<String> {
-        let osdi_path = compile_veriloga_impl(source_or_path)
-            .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
-        self.inner.osdi_loads.push(osdi_path.clone());
-        Ok(osdi_path)
+        let va = crate::veriloga::resolve(source_or_path)
+            .map_err(pyo3::exceptions::PyRuntimeError::new_err)?
+            .to_string_lossy().to_string();
+        if !self.inner.osdi_loads.contains(&va) { self.inner.osdi_loads.push(va.clone()); }
+        Ok(va)
     }
 
     /// Add a Verilog module to the subcircuit (stored in IR for later code generation).

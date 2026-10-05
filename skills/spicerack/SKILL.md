@@ -55,7 +55,7 @@ Bandwidth defaults to the half-power point, `HALF_POWER_DB` = 3.0103 dB. A round
 
 ## Backends
 
-Names: `ngspice` (alias `ngspice-subprocess`), `ngspice-shared`, `ltspice`, `vacask`, `vacask-shared`, `spectre` — nothing else (no ESPice, no Xyce); `with_backend()` / `simulator()` raise `ValueError` on any other name. Pick one with `tb.with_backend(name)`; no env var selects a backend. Forced `vacask` rejects `dc`. `ngspice` is the default and the only one assumed present. Declared features gate backend selection, so a bench that asks for `.measure` support will not route to vacask. Check with `tb.check_backend(name)` and `ps.CircuitSimulator.available_backends()`.
+Names: `ngspice` (alias `ngspice-subprocess`), `ngspice-shared`, `ltspice`, `vacask`, `vacask-shared`, `spectre`, `espice` — nothing else (no Xyce); `with_backend()` / `simulator()` raise `ValueError` on any other name. Pick one with `tb.with_backend(name)`, or for every run that names none with `SPICERACK_BACKEND=<name>`. On `espice`, `veriloga()` becomes `.hdl` (VerA, no OpenVAF) and `osdi()` is refused. Forced `vacask` rejects `dc`. `ngspice` is the default and the only one assumed present. Declared features gate backend selection, so a bench that asks for `.measure` support will not route to vacask. Check with `tb.check_backend(name)` and `ps.CircuitSimulator.available_backends()`.
 
 → Element signatures per class, analysis signatures, the unit list, and the backend capability matrix: [`REFERENCE.md`](REFERENCE.md)
 

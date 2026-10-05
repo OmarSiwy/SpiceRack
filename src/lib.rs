@@ -12,6 +12,7 @@ pub mod measure_parse;
 pub mod lint;
 pub mod ir;
 pub mod codegen;
+pub mod veriloga;
 
 #[cfg(feature = "python")]
 #[allow(non_snake_case)]

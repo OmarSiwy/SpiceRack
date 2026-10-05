@@ -835,9 +835,9 @@ class TestTestbenchCreation:
         with pytest.raises(ValueError, match="unknown backend"):
             tb.with_backend("xyce")
         with pytest.raises(ValueError, match="unknown backend"):
-            ps.Circuit("c").simulator(simulator="espice")
+            ps.Circuit("c").simulator(simulator="egspice")
         for name in ["ngspice", "ngspice-subprocess", "ngspice-shared", "ltspice",
-                     "vacask", "vacask-shared", "spectre"]:
+                     "vacask", "vacask-shared", "spectre", "espice"]:
             tb.with_backend(name)
 
     def test_add_multi_analysis_and_netlist(self):

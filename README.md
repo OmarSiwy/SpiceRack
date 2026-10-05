@@ -20,8 +20,8 @@ You also need at least one simulator to actually run an analysis. Start with `ng
 | Tool | Needed for |
 | --- | --- |
 | `ngspice` | Default backend, and the only one with XSPICE, control blocks, and Verilog co-simulation |
-| `ltspice`, `vacask`, `spectre` | Alternative backends |
-| `openvaf` | Compiling Verilog-A to OSDI |
+| `ltspice`, `vacask`, `spectre`, `espice` | Alternative backends |
+| `openvaf` | Compiling Verilog-A to OSDI (ngspice, VACASK; ESPice compiles it itself) |
 | `iverilog` | Digital Verilog co-simulation |
 | `yosys` | Synthesizing Verilog to gate level (`verilog(mode="synthesize")`) |
 | `ciel` plus `PDK_ROOT` | Installing open PDKs (sky130, gf180mcu) |
@@ -176,15 +176,15 @@ sim = circuit.simulator(simulator="spectre")
 
 Without an explicit choice, SpiceRack picks a backend by looking at what the circuit uses and what the analysis needs. A circuit with XSPICE elements or a control block narrows to ngspice; one with OSDI models can go to ngspice, VACASK, or Spectre.
 
-| Feature | ngspice | ltspice | vacask | spectre |
-| --- | --- | --- | --- | --- |
-| XSPICE (A-elements) | Yes | No | No | No |
-| OSDI (Verilog-A) | Yes | No | Yes | Yes |
-| `.measure` | Yes | Yes | No | Yes |
-| Parameter sweeps | No | Yes | Yes | Yes |
-| Control blocks | Yes | No | No | No |
-| Laplace sources | Yes | Yes | No | No |
-| Verilog co-simulation | Yes | No | No | Yes |
+| Feature | ngspice | ltspice | vacask | spectre | espice |
+| --- | --- | --- | --- | --- | --- |
+| XSPICE (A-elements) | Yes | No | No | No | No |
+| OSDI (Verilog-A) | Yes | No | Yes | Yes | Verilog-A source only (VerA), no `.osdi` |
+| `.measure` | Yes | Yes | No | Yes | Yes |
+| Parameter sweeps | No | Yes | Yes | Yes | No |
+| Control blocks | Yes | No | No | No | No |
+| Laplace sources | Yes | Yes | No | No | No |
+| Verilog co-simulation | Yes | No | No | Yes | No |
 
 Because the DUT is backend neutral, running the same design on several simulators is a loop:
 
@@ -196,17 +196,13 @@ for backend in ["ngspice", "vacask"]:
     print(backend, tb.operating_point()["vout"])
 ```
 
-### Not yet a backend: ESPice / EGSpice
+### ESPice
 
-ESPice (the ARPice repo) and its successor EGSpice are Zig simulators that run Verilog-A through VerA (`.hdl "model.va"` in the deck) instead of OpenVAF/OSDI, which is what makes `@(cross)` and `transition()` usable. Nothing here implements them. A backend needs:
+[ESPice](https://github.com/OmarSiwy/ESPice) (`espice` on `$PATH`) reads the ngspice dialect and compiles Verilog-A itself through VerA, so `@(cross)` and `transition()` models run. `veriloga("model.va")` only records the source; each backend's codegen decides what it becomes: OpenVAF → `pre_osdi` for ngspice, `load` for VACASK, `ahdl_include` for Spectre, and `.hdl "model.va"` for ESPice, with no OpenVAF run. ESPice loads no OSDI binaries, so `osdi("x.osdi")` on an ESPice bench is a codegen error, and a legacy `Circuit` deck that carries `pre_osdi` is refused. VA instances use a variable-node-count letter (`N`, `X`, `U`).
 
-- **A `BackendKind` variant** (`src/backend/mod.rs`): its name in `from_str` and `display_name`, an arm in `create_backend_by_name` with its unsupported-analysis list, detection in `detect.rs` (`espice` on `$PATH`), and the name added to `check_backend_name` in `src/python.rs`.
-- **A `Backend` impl** whose `run` writes the deck, calls `espice deck.sp -r out.raw`, and returns `rawfile` output. Pick a `--format` the existing nutmeg parser reads; anything else needs a parser. Add the name to the `normalize.rs` and `measure_parse.rs` matches.
-- **A codegen**: `Spice3CodeGen` (ngspice dialect) plus one dialect switch. `veriloga()`/`osdi()` become `.hdl "<.va path>"`, with no `pre_osdi` control block and no OpenVAF compile. VA instances must use a variable-node-count letter (`N`, `X`, `U`), since ESPice splits nodes from the model by letter.
-- **Honest `capabilities()`**: no XSPICE, no `.control`. ESPice ignores nodesets, so `node_set` should be refused, not dropped. Whether `.measure` and `.step` work has to be checked against the real binary before they are declared.
-- **Lint for silent failures**: ESPice ignores misspelled instance parameters and grounds missing ports. Lint should flag a parameter that is not declared in the `.va`.
-- **Tests** like `tests/test_vacask_runs.rs`: one deck per analysis, checked against a closed form.
-- **Blocker:** as of 2026-09-29 EGSpice's build rejects even a resistor, and ESPice needs a writable source tree for its `.hdl` cache.
+The first run of a model compiles it, which needs the Zig compiler ESPice was built with on `$PATH` (or `$ZIG`); builds are cached under `$ESPICE_CACHE` (else `~/.cache/espice`). A misspelled instance parameter or a wrong node count is an error, not a silent default. Measured against the binary: op, dc (incl. `.dc temp`), ac, tran, tf, sens and `.meas` run; `.tf` names its columns `input_resistance`/`output_resistance`. `.step` is not wired (ESPice writes one plot per point and the raw reader keeps one), and noise/pz/disto result layouts are not mapped yet. Corners, `run_corners` (including `seeds=`: with `.options seed=N` ESPice draws `agauss`/`gauss`/`unif` once from that seed, as ngspice draws them per run) and the characterization recipes run on it.
+
+`SPICERACK_BACKEND=<name>` selects the backend for every run that does not name one (`with_backend()` or a recipe's `backend=` still wins).
 
 ## PDKs and model libraries
 
